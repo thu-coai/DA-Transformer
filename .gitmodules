@@ -1,0 +1,7 @@
+[submodule "dag_search"]
+	path = dag_search
+	url = https://github.com/thu-coai/DAG-Search
+
+[submodule "lightseq"]
+	path = lightseq
+	url = https://github.com/thu-coai/lightseq-nat
