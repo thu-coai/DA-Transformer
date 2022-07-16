@@ -28,6 +28,7 @@
 
 #include <torch/extension.h>
 #include <torch/torch.h>
+#include "utilities.h"
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CPU(x) TORCH_CHECK(x.type().is_cpu(), #x " must be a CPU tensor")
@@ -99,11 +100,11 @@ __global__ void calculate_alpha_kernel(
             if(nextval > maxval) maxval = nextval;
         }
         unsigned shfl_mask = __activemask();
-        if constexpr (TRANS_BLOCK_SIZE > 16) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 16, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
-        if constexpr (TRANS_BLOCK_SIZE > 8) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 8, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
-        if constexpr (TRANS_BLOCK_SIZE > 4) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 4, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
-        if constexpr (TRANS_BLOCK_SIZE > 2) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 2, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
-        if constexpr (TRANS_BLOCK_SIZE > 1) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 1, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+        if_constexpr (TRANS_BLOCK_SIZE > 16) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 16, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+        if_constexpr (TRANS_BLOCK_SIZE > 8) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 8, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+        if_constexpr (TRANS_BLOCK_SIZE > 4) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 4, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+        if_constexpr (TRANS_BLOCK_SIZE > 2) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 2, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+        if_constexpr (TRANS_BLOCK_SIZE > 1) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 1, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
         maxval = __shfl_sync(shfl_mask, maxval, 0, TRANS_BLOCK_SIZE);
         // if(t == 1 && threadIdx.y == 1) printf("%d %d %d %d: aft1_maxval = %f\n", blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, maxval);
         
@@ -117,11 +118,11 @@ __global__ void calculate_alpha_kernel(
                 int lastpos = nowpos - delta;
                 sumval += exp(alpha[batch_id][t - 1][lastpos] + links[batch_id][lastpos][delta - 1] - maxval);
             }
-            if constexpr (TRANS_BLOCK_SIZE > 16) sumval += __shfl_down_sync(shfl_mask, sumval, 16, TRANS_BLOCK_SIZE);
-            if constexpr (TRANS_BLOCK_SIZE > 8) sumval += __shfl_down_sync(shfl_mask, sumval, 8, TRANS_BLOCK_SIZE);
-            if constexpr (TRANS_BLOCK_SIZE > 4) sumval += __shfl_down_sync(shfl_mask, sumval, 4, TRANS_BLOCK_SIZE);
-            if constexpr (TRANS_BLOCK_SIZE > 2) sumval += __shfl_down_sync(shfl_mask, sumval, 2, TRANS_BLOCK_SIZE);
-            if constexpr (TRANS_BLOCK_SIZE > 1) sumval += __shfl_down_sync(shfl_mask, sumval, 1, TRANS_BLOCK_SIZE);
+            if_constexpr (TRANS_BLOCK_SIZE > 16) sumval += __shfl_down_sync(shfl_mask, sumval, 16, TRANS_BLOCK_SIZE);
+            if_constexpr (TRANS_BLOCK_SIZE > 8) sumval += __shfl_down_sync(shfl_mask, sumval, 8, TRANS_BLOCK_SIZE);
+            if_constexpr (TRANS_BLOCK_SIZE > 4) sumval += __shfl_down_sync(shfl_mask, sumval, 4, TRANS_BLOCK_SIZE);
+            if_constexpr (TRANS_BLOCK_SIZE > 2) sumval += __shfl_down_sync(shfl_mask, sumval, 2, TRANS_BLOCK_SIZE);
+            if_constexpr (TRANS_BLOCK_SIZE > 1) sumval += __shfl_down_sync(shfl_mask, sumval, 1, TRANS_BLOCK_SIZE);
             res = log(sumval) + maxval + match_all[batch_id][t][nowpos];
         }
         if(threadIdx.x == 0){
@@ -234,11 +235,11 @@ __global__ void calculate_beta_kernel(
                 if(nextval > maxval) maxval = nextval;
             }
             unsigned shfl_mask = __activemask();
-            if constexpr (TRANS_BLOCK_SIZE > 16) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 16, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
-            if constexpr (TRANS_BLOCK_SIZE > 8) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 8, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
-            if constexpr (TRANS_BLOCK_SIZE > 4) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 4, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
-            if constexpr (TRANS_BLOCK_SIZE > 2) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 2, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
-            if constexpr (TRANS_BLOCK_SIZE > 1) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 1, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+            if_constexpr (TRANS_BLOCK_SIZE > 16) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 16, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+            if_constexpr (TRANS_BLOCK_SIZE > 8) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 8, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+            if_constexpr (TRANS_BLOCK_SIZE > 4) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 4, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+            if_constexpr (TRANS_BLOCK_SIZE > 2) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 2, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
+            if_constexpr (TRANS_BLOCK_SIZE > 1) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 1, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
             maxval = __shfl_sync(shfl_mask, maxval, 0, TRANS_BLOCK_SIZE);
             
             shfl_mask = __ballot_sync(shfl_mask, !isinf(maxval));        
@@ -251,11 +252,11 @@ __global__ void calculate_beta_kernel(
                     int lastpos = nowpos + delta;
                     sumval += exp(beta[batch_id][t + 1][lastpos] + links[batch_id][nowpos][delta - 1] - maxval);
                 }
-                if constexpr (TRANS_BLOCK_SIZE > 16) sumval += __shfl_down_sync(shfl_mask, sumval, 16, TRANS_BLOCK_SIZE);
-                if constexpr (TRANS_BLOCK_SIZE > 8) sumval += __shfl_down_sync(shfl_mask, sumval, 8, TRANS_BLOCK_SIZE);
-                if constexpr (TRANS_BLOCK_SIZE > 4) sumval += __shfl_down_sync(shfl_mask, sumval, 4, TRANS_BLOCK_SIZE);
-                if constexpr (TRANS_BLOCK_SIZE > 2) sumval += __shfl_down_sync(shfl_mask, sumval, 2, TRANS_BLOCK_SIZE);
-                if constexpr (TRANS_BLOCK_SIZE > 1) sumval += __shfl_down_sync(shfl_mask, sumval, 1, TRANS_BLOCK_SIZE);
+                if_constexpr (TRANS_BLOCK_SIZE > 16) sumval += __shfl_down_sync(shfl_mask, sumval, 16, TRANS_BLOCK_SIZE);
+                if_constexpr (TRANS_BLOCK_SIZE > 8) sumval += __shfl_down_sync(shfl_mask, sumval, 8, TRANS_BLOCK_SIZE);
+                if_constexpr (TRANS_BLOCK_SIZE > 4) sumval += __shfl_down_sync(shfl_mask, sumval, 4, TRANS_BLOCK_SIZE);
+                if_constexpr (TRANS_BLOCK_SIZE > 2) sumval += __shfl_down_sync(shfl_mask, sumval, 2, TRANS_BLOCK_SIZE);
+                if_constexpr (TRANS_BLOCK_SIZE > 1) sumval += __shfl_down_sync(shfl_mask, sumval, 1, TRANS_BLOCK_SIZE);
                 res = log(sumval) + maxval + match_all[batch_id][t][nowpos];
             }
             if(threadIdx.x == 0){
@@ -335,8 +336,8 @@ std::tuple<torch::Tensor, torch::Tensor> dag_loss(const torch::Tensor &match_all
 
     // calculate alpha
     // printf("%d %d %d\n", bsz, tarlen, prelen);
-    auto alpha = at::zeros({bsz, tarlen, prelen}, match_all.type());
-    torch::Tensor beta = at::zeros({bsz, tarlen, prelen}, match_all.type());
+    auto alpha = at::zeros({bsz, tarlen, prelen}, match_all.options());
+    torch::Tensor beta = at::zeros({bsz, tarlen, prelen}, match_all.options());
 
 
     // printf("alpha1\n");
@@ -475,11 +476,11 @@ __global__ void calculate_grad_links_kernel(
 
     __syncwarp(0xffffffff);
     unsigned shfl_mask = __activemask();
-    if constexpr (WARP_SIZE > 16) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 16, WARP_SIZE);
-    if constexpr (WARP_SIZE > 8) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 8, WARP_SIZE);
-    if constexpr (WARP_SIZE > 4) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 4, WARP_SIZE);
-    if constexpr (WARP_SIZE > 2) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 2, WARP_SIZE);
-    if constexpr (WARP_SIZE > 1) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 1, WARP_SIZE);
+    if_constexpr (WARP_SIZE > 16) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 16, WARP_SIZE);
+    if_constexpr (WARP_SIZE > 8) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 8, WARP_SIZE);
+    if_constexpr (WARP_SIZE > 4) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 4, WARP_SIZE);
+    if_constexpr (WARP_SIZE > 2) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 2, WARP_SIZE);
+    if_constexpr (WARP_SIZE > 1) grad_tmp += __shfl_down_sync(shfl_mask, grad_tmp, 1, WARP_SIZE);
     if(threadIdx.x == 0) grad_links[batch_id][pre_id][trans_id] = grad_tmp * grad_output[batch_id];
 }
 
@@ -536,8 +537,8 @@ std::tuple<torch::Tensor, torch::Tensor> dag_loss_backward(const torch::Tensor &
     // TORCH_CHECK(links.size(1) == prelen, "prelen not match");
     // TORCH_CHECK(output_length.scalar_type() == at::kLong && target_length.scalar_type() == at::kLong, "length should be long");
 
-    auto grad_match_all = at::zeros({bsz, tarlen, prelen}, match_all.type());
-    torch::Tensor grad_links = at::zeros({bsz, prelen, translen}, match_all.type());
+    auto grad_match_all = at::zeros({bsz, tarlen, prelen}, match_all.options());
+    torch::Tensor grad_links = at::zeros({bsz, prelen, translen}, match_all.options());
 
     cudaStream_t current_stream = 0;
     // printf("alpha0\n");

@@ -231,7 +231,7 @@ std::tuple<torch::Tensor, torch::Tensor> dag_best_alignment(const torch::Tensor 
 
     // calculate alpha
     // printf("%d %d %d\n", bsz, tarlen, prelen);
-    auto alpha = at::zeros({bsz, tarlen, prelen}, match_all.type());
+    auto alpha = at::zeros({bsz, tarlen, prelen}, match_all.options());
     auto trace = at::zeros({bsz, tarlen, prelen}, match_all.options().dtype(at::kInt));
     auto path = at::zeros({bsz, prelen}, match_all.options().dtype(at::kInt));
 

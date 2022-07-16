@@ -262,7 +262,7 @@ __global__ void logsoftmax_gather_kernel(
 {
 	const int tid = threadIdx.x;
 	// assert(cols % pack_size == 0);
-	static_assert(pack_size == 1);
+	static_assert(pack_size == 1, "pack_size should not be 1");
 	const int num_packs = cols / pack_size;
 
 	for (int64_t row = blockIdx.x; row < rows; row += gridDim.x) {

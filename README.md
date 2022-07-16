@@ -28,6 +28,7 @@ This repo is modified from [``fairseq:5175fd``](https://github.com/pytorch/fairs
 
 * Python >= 3.7
 * Pytorch == 1.10.1
+* gcc >= 7.0.0 (for compiling cuda operations. See FAQs if you want to use a lower gcc version)
 * ``git clone --recurse-submodules https://github.com/thu-coai/DA-Transformer.git && pip install -e .``
 * (Optional) Customized LightSeq for NAT (``cd lightseq && pip install -e .``)
 * (Optional) BeamSearch algorithm for DA-Transformer (``cd dag_search && bash install.sh``)
@@ -286,6 +287,35 @@ We provide a script to converting a LightSeq checkpoint to a Fairseq checkpoint:
 ```bash
 python3 ./fs_plugins/scripts/convert_ls_to_fairseq.py --input path/to/ls_checkpoint.pt --output path/to/fairseq_checkpoint.pt --user_dir ./fs_plugins
 ```
+
+## FAQs
+
+1. **Cuda Compiled Failed: error: invalid static_cast from type ...**
+
+   Check your gcc version. **We recommend to use at least gcc 7** since PyTorch seems no longer supporting a lower gcc version.
+
+   If you do not want to upgrade your gcc, here is a workaround (https://zhuanlan.zhihu.com/p/468605263, in Chinese):
+
+   * find the header file ``/PATH/TO/PYTHONLIB/torch/include/torch/csrc/api/include/torch/nn/cloneable.h``
+
+   * modify line 46, 58, 70. Original codes:
+
+     ```
+     copy->parameters_.size() == parameters_.size()
+     copy->buffers_.size() == buffers_.size()
+     copy->children_.size() == children_.size()
+     ```
+
+     Modified codes:
+
+     ```
+     copy->parameters_.size() == this -> parameters_.size()
+     copy->buffers_.size() == this -> buffers_.size()
+     copy->children_.size() == this -> children_.size()
+     ```
+
+   * Rerun your script
+
 ## Citing
 
 Please kindly cite us if you find this paper or codes useful.
