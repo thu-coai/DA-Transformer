@@ -224,6 +224,7 @@ def do_setup(package_data):
             "sacrebleu[ja]",
             "tqdm",
             "bitarray",
+            "ninja"
         ],
         dependency_links=dependency_links,
         packages=find_packages(

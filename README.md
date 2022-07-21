@@ -27,7 +27,7 @@ This repo is modified from [``fairseq:5175fd``](https://github.com/pytorch/fairs
 ## Requirements & Installation
 
 * Python >= 3.7
-* Pytorch == 1.10.1
+* Pytorch == 1.10.1 (tested with cuda == 10.2 or 11.3)
 * gcc >= 7.0.0 (for compiling cuda operations. See FAQs if you want to use a lower gcc version)
 * ``git clone --recurse-submodules https://github.com/thu-coai/DA-Transformer.git && pip install -e .``
 * (Optional) Customized LightSeq for NAT (``cd lightseq && pip install -e .``)
@@ -43,6 +43,7 @@ Most codes of the framework are from Fairseq. We mainly add the following files.
 fs_plugins
 ├── criterions
 │   └── nat_dag_loss.py                   # DA-Transformer loss
+├── cub                                   # Requirements: Nvidia CUDA programming model
 ├── custom_ops                            # operations implementations and cuda kernels
 │   ├── dag_best_alignment.cu
 │   ├── logsoftmax_gather.cu

@@ -16,6 +16,7 @@
 
 import os
 import math
+import sys
 
 import torch
 from torch import nn, Tensor
@@ -39,6 +40,7 @@ def get_dag_kernel():
     if dag_kernel is not None:
         return dag_kernel
     else:
+        print("Start compiling cuda operations for DA-Transformer...", file=sys.stderr, flush=True)
         dag_kernel = load(
             "dag_loss_fn",
             sources=[
@@ -47,9 +49,11 @@ def get_dag_kernel():
                 os.path.join(module_path, "dag_best_alignment.cu"),
                 os.path.join(module_path, "logsoftmax_gather.cu"),
             ],
-            extra_cflags=['-DOF_SOFTMAX_USE_FAST_MATH'],
-            extra_cuda_cflags=['-DOF_SOFTMAX_USE_FAST_MATH'],
+            extra_cflags=['-DOF_SOFTMAX_USE_FAST_MATH', '-O3'],
+            extra_cuda_cflags=['-DOF_SOFTMAX_USE_FAST_MATH', '-O3'],
+            extra_include_paths=[os.path.join(module_path, "../../cub")],
         )
+        print("Cuda operations compiling finished", file=sys.stderr, flush=True)
         return dag_kernel
 
 class DagLossFunc(Function):

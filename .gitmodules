@@ -5,3 +5,7 @@
 [submodule "lightseq"]
 	path = lightseq
 	url = https://github.com/thu-coai/lightseq-nat
+
+[submodule "cub"]
+	path = cub
+	url = https://github.com/NVIDIA/cub
