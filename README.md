@@ -150,8 +150,8 @@ fairseq-train ${data_dir}  \
 --links-feature feature:position  # Features used to predict links(transitions). We use transformer outputs with learnable positional embeddings
 --max-transition-length 99999       # Max transition distance. -1 means no limitation, which does not support cuda operations. To use cuda operations with no limitation, please set a very large number such as 99999.
 --src-upsample-scale 8.0          # The upsampling rate (\lambda), Graph Size = \lambda * src_length
---max-source-positions 128        # Max source length
---max-target-positions 1024       # Max target length (Should be equal to max_source_positions * \lambda)
+--max-source-positions 128        # Max length of encoder
+--max-target-positions 1024       # Max length of decoder. Should be at least \lambda * the max target length in samples. The samples not satisfying the limitation will be dropped.
 --decode-strategy  lookahead      # Decoding Strategy. Possible values: greedy, lookahead, beamsearch.
 
 --criterion nat_dag_loss          # The Criterion for DA-Transformer

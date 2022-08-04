@@ -110,11 +110,11 @@ class GlatDecomposedLink(FairseqNATModel):
                         which cannot be used for cuda custom operations. To use cuda operations with no limitation, please use a very large number such as 99999.")
 
         parser.add_argument("--src-upsample-scale", type=float, default=None, help="Specify the graph size with a upsample factor (lambda).  Graph Size = \\lambda * src_length")
-        parser.add_argument("--src-upsample-fixed", type=int, default=None, help="Specify the graph size by a constant")
+        parser.add_argument("--src-upsample-fixed", type=int, default=None, help="Specify the graph size by a constant. Cannot use together with src-upsample-scale")
         parser.add_argument("--length-multiplier", type=float, default=None, help="Deprecated") # does not work now
         parser.add_argument('--max-decoder-batch-tokens', type=int, default=None, help="Max tokens for LightSeq Decoder when using --src-upsample-fixed")
 
-        parser.add_argument('--filter-max-length', default=None, type=str, help='Filter the sample that above the max lengths, e.g., "128:256" indicating 128 for source, 256 for target')
+        parser.add_argument('--filter-max-length', default=None, type=str, help='Filter the sample that above the max lengths, e.g., "128:256" indicating 128 for source, 256 for target. Default: None, for filtering according max-source-positions and max-target-positions')
         parser.add_argument("--filter-ratio", type=float, default=None, help="Deprecated") # does not work now; need support of trainer.py
 
         parser.add_argument('--decode-strategy', type=str, default="lookahead", help='One of "greedy", "lookahead", "beamsearch"')

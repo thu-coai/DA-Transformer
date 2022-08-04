@@ -40,7 +40,13 @@ def get_dag_kernel():
     if dag_kernel is not None:
         return dag_kernel
     else:
-        print("Start compiling cuda operations for DA-Transformer...", file=sys.stderr, flush=True)
+        print("Start compiling cuda operations for DA-Transformer...(It usually takes a few minutes for the first time running.)", file=sys.stderr, flush=True)
+
+        if int(torch.version.cuda.split(".")[0]) < 11:
+            extra_include_paths = [os.path.join(module_path, "../../cub")]
+        else:
+            extra_include_paths = None
+
         dag_kernel = load(
             "dag_loss_fn",
             sources=[
@@ -51,9 +57,9 @@ def get_dag_kernel():
             ],
             extra_cflags=['-DOF_SOFTMAX_USE_FAST_MATH', '-O3'],
             extra_cuda_cflags=['-DOF_SOFTMAX_USE_FAST_MATH', '-O3'],
-            extra_include_paths=[os.path.join(module_path, "../../cub")],
+            extra_include_paths=extra_include_paths,
         )
-        print("Cuda operations compiling finished", file=sys.stderr, flush=True)
+        print("Cuda operations compiled", file=sys.stderr, flush=True)
         return dag_kernel
 
 class DagLossFunc(Function):
