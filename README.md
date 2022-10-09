@@ -239,7 +239,7 @@ fairseq-generate ${data_dir} \
     --gen-subset test --user-dir fs_plugins --task translation_lev_modified \
     --iter-decode-max-iter 0 --iter-decode-eos-penalty 0 --beam 1 \
     --remove-bpe --max-tokens 4096 --seed 0 \
-    --model-overrides "{\"decode_strategy\":\"viterbi\\", \"decode_viterbibeta\":1.0}" \
+    --model-overrides "{\"decode_strategy\":\"viterbi\", \"decode_viterbibeta\":1.0}" \
     --path ${average_checkpoint_path}
 
 # Joint-Viterbi
@@ -248,7 +248,7 @@ fairseq-generate ${data_dir} \
     --gen-subset test --user-dir fs_plugins --task translation_lev_modified \
     --iter-decode-max-iter 0 --iter-decode-eos-penalty 0 --beam 1 \
     --remove-bpe --max-tokens 4096 --seed 0 \
-    --model-overrides "{\"decode_strategy\":\"jointviterbi\\",\"decode_viterbibeta\":1.0}" \
+    --model-overrides "{\"decode_strategy\":\"jointviterbi\",\"decode_viterbibeta\":1.0}" \
     --path ${average_checkpoint_path}
 ```
 
