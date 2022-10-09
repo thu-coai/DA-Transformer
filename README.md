@@ -227,7 +227,8 @@ For WMT17 En-Zh, we add ``--source-lang en --target-lang zh --tokenizer moses --
 **Note: the latency in our paper is evaluated with batch size of 1.  That is, replacing --max-tokens 4096 by --batch-size 1**
 
 ### Viterbi Decoding
-# Viterbi decoding algorithms proposed in "**Viterbi Decoding of Directed Acyclic Transformer for Non-Autoregressive Machine Translation**". ``decode_viterbibeta`` is the length penalty that controls the output length. Viterbi decoding finds the path than maximizes P(A|X) / |Y|^{beta}. Joint-Viterbi finds the output that maximizes P(A,Y|X) / |Y|^{beta}.
+
+Viterbi decoding algorithms proposed in "**Viterbi Decoding of Directed Acyclic Transformer for Non-Autoregressive Machine Translation**". ``decode_viterbibeta`` is the length penalty that controls the output length. Viterbi decoding finds the path than maximizes P(A|X) / |Y|^{beta}. Joint-Viterbi finds the output that maximizes P(A,Y|X) / |Y|^{beta}.
 
 ```bash
 # Viterbi
