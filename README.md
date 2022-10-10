@@ -230,6 +230,8 @@ For WMT17 En-Zh, we add ``--source-lang en --target-lang zh --tokenizer moses --
 
 Viterbi decoding algorithms proposed in "**Viterbi Decoding of Directed Acyclic Transformer for Non-Autoregressive Machine Translation**". ``decode_viterbibeta`` is the length penalty that controls the output length. Viterbi decoding finds the path than maximizes P(A|X) / |Y|^{beta}. Joint-Viterbi finds the output that maximizes P(A,Y|X) / |Y|^{beta}.
 
+You can specify ``decode_strategy`` to ``viterbi`` or ``jointviterbi`` to enable the Viterbi decoding. ``jointviterbi`` is usually recommended because it jointly considers the transition and token probabilities, similar to lookahead decoding.
+
 ```bash
 # Viterbi
 data_dir=/path/to/binarized/data/dir
@@ -346,13 +348,26 @@ python3 ./fs_plugins/scripts/convert_ls_to_fairseq.py --input path/to/ls_checkpo
 
 ## Citing
 
-Please kindly cite us if you find this paper or codes useful.
+Please kindly cite us if you find our papers or codes useful.
+
+DA-Transformer:
 
 ```
 @inproceedings{huang2022DATransformer,
   author = {Fei Huang and Hao Zhou and Yang Liu and Hang Li and Minlie Huang},
   title = {Directed Acyclic Transformer for Non-Autoregressive Machine Translation},
   booktitle = {Proceedings of the 39th International Conference on Machine Learning, {ICML} 2022},
+  year = {2022}
+}
+```
+
+Viterbi Decoding:
+
+```
+@inproceedings{shao2022viterbi,
+  author = {Chenze Shao and Zhengrui Ma and Yang Feng},
+  title = {Viterbi Decoding of Directed Acyclic Transformer for Non-Autoregressive Machine Translation},
+  booktitle = {Findings of EMNLP 2022},
   year = {2022}
 }
 ```
