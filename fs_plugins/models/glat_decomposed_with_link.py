@@ -117,10 +117,11 @@ class GlatDecomposedLink(FairseqNATModel):
         parser.add_argument('--filter-max-length', default=None, type=str, help='Filter the sample that above the max lengths, e.g., "128:256" indicating 128 for source, 256 for target. Default: None, for filtering according max-source-positions and max-target-positions')
         parser.add_argument("--filter-ratio", type=float, default=None, help="Deprecated") # does not work now; need support of trainer.py
 
-        parser.add_argument('--decode-strategy', type=str, default="lookahead", help='One of "greedy", "lookahead", "beamsearch"')
+        parser.add_argument('--decode-strategy', type=str, default="lookahead", help='One of "greedy", "lookahead", "viterbi", "jointviterbi", "beamsearch"')
 
         parser.add_argument('--decode-alpha', type=float, default=1.1, help="Used for length penalty. Beam Search finds the sentence maximize: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]")
         parser.add_argument('--decode-beta', type=float, default=1, help="Scale the score of logits. log P(Y, A) := sum P(y_i|a_i) + beta * sum log(a_i|a_{i-1})")
+        parser.add_argument('--decode-viterbibeta', type=float, default=1, help="Length penalty for Viterbi decoding. Viterbi decoding finds the sentence maximize: P(A,Y|X) / |Y|^{beta}")
         parser.add_argument('--decode-top-cand-n', type=float, default=5, help="Numbers of top candidates when considering transition")
         parser.add_argument('--decode-gamma', type=float, default=0.1, help="Used for n-gram language model score. Beam Search finds the sentence maximize: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]")
         parser.add_argument('--decode-beamsize', type=float, default=100, help="Beam size")
@@ -405,6 +406,59 @@ class GlatDecomposedLink(FairseqNATModel):
                     now_token = unreduced_tokens[i][j]
                     if now_token != self.tgt_dict.pad_index and now_token != last:
                         res.append(now_token)
+                    last = now_token
+                unpad_output_tokens.append(res)
+
+            output_seqlen = max([len(res) for res in unpad_output_tokens])
+            output_tokens = [res + [self.tgt_dict.pad_index] * (output_seqlen - len(res)) for res in unpad_output_tokens]
+            output_tokens = torch.tensor(output_tokens, device=decoder_out.output_tokens.device, dtype=decoder_out.output_tokens.dtype)
+        elif self.args.decode_strategy in ["viterbi", "jointviterbi"]:
+            scores = []
+            indexs = []
+            # batch * graph_length
+            alpha_t = links[:,0]
+            if self.args.decode_strategy == "jointviterbi":
+                alpha_t += unreduced_logits[:,0].unsqueeze(1)
+            batch_size, graph_length, _ = links.size()
+            alpha_t += unreduced_logits
+            scores.append(alpha_t)
+            
+            # the exact max_length should be graph_length - 2, but we can reduce it to an appropriate extent to speedup decoding
+            max_length = int(2 * graph_length / self.args.src_upsample_scale)
+            for i in range(max_length - 1):
+                alpha_t, index = torch.max(alpha_t.unsqueeze(-1) + links, dim = 1)
+                if self.args.decode_strategy == "jointviterbi":
+                    alpha_t += unreduced_logits
+                scores.append(alpha_t)
+                indexs.append(index)
+
+            # max_length * batch * graph_length
+            indexs = torch.stack(indexs, dim = 0)
+            scores = torch.stack(scores, dim = 0)
+            link_last = torch.gather(links, -1, (output_length - 1).view(batch_size, 1, 1).repeat(1, graph_length, 1)).view(1, batch_size, graph_length)
+            scores += link_last
+
+            # max_length * batch
+            scores, max_idx = torch.max(scores, dim = -1)
+            lengths = torch.arange(max_length).unsqueeze(-1).repeat(1, batch_size) + 1
+            length_penalty = (lengths ** self.args.decode_viterbibeta).cuda(scores.get_device())
+            scores = scores / length_penalty
+            max_score, pred_length = torch.max(scores, dim = 0)
+            pred_length = pred_length + 1
+
+            initial_idx = torch.gather(max_idx, 0, (pred_length - 1).view(1, batch_size)).view(batch_size).tolist()
+            unpad_output_tokens = []
+            indexs = indexs.tolist()
+            pred_length = pred_length.tolist()
+            for i, length in enumerate(pred_length):
+                j = initial_idx[i]
+                last = unreduced_tokens[i][j]
+                res = [last]
+                for k in range(length - 1):
+                    j = indexs[length - k - 2][i][j]
+                    now_token = unreduced_tokens[i][j]
+                    if now_token != self.tgt_dict.pad_index and now_token != last:
+                        res.insert(0, now_token)
                     last = now_token
                 unpad_output_tokens.append(res)
 

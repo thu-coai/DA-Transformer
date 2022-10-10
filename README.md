@@ -178,10 +178,11 @@ Lightseq usually brings about 1.5x speed up in training.
 
 ## Inference
 
-DA-Transformer provides three decoding strategy:
+DA-Transformer provides four decoding strategy:
 
 * **Greedy**:  Fastest, use argmax in token prediction and transition prediction.
 * **Lookahead**: Similar speed as Greedy, but higher quality. Consider transition prediction and token prediction together
+* **Viterbi**: Slightly slower than Lookahead but higher quality. Support length penalty to control the output length.
 * **BeamSearch**: Slowest but highest quality. Can combine with n-gram language model.
 
 ### Average Checkpoints
@@ -224,6 +225,32 @@ fairseq-generate ${data_dir} \
 For WMT17 En-Zh, we add ``--source-lang en --target-lang zh --tokenizer moses --scoring sacrebleu --sacrebleu-tokenizer zh``.
 
 **Note: the latency in our paper is evaluated with batch size of 1.  That is, replacing --max-tokens 4096 by --batch-size 1**
+
+### Viterbi Decoding
+
+Viterbi decoding algorithms proposed in "**Viterbi Decoding of Directed Acyclic Transformer for Non-Autoregressive Machine Translation**". ``decode_viterbibeta`` is the length penalty that controls the output length. Viterbi decoding finds the path than maximizes P(A|X) / |Y|^{beta}. Joint-Viterbi finds the output that maximizes P(A,Y|X) / |Y|^{beta}.
+
+```bash
+# Viterbi
+data_dir=/path/to/binarized/data/dir
+average_checkpoint_path=/path/to/checkpoint/average.pt
+
+fairseq-generate ${data_dir} \
+    --gen-subset test --user-dir fs_plugins --task translation_lev_modified \
+    --iter-decode-max-iter 0 --iter-decode-eos-penalty 0 --beam 1 \
+    --remove-bpe --max-tokens 4096 --seed 0 \
+    --model-overrides "{\"decode_strategy\":\"viterbi\", \"decode_viterbibeta\":1.0}" \
+    --path ${average_checkpoint_path}
+
+# Joint-Viterbi
+
+fairseq-generate ${data_dir} \
+    --gen-subset test --user-dir fs_plugins --task translation_lev_modified \
+    --iter-decode-max-iter 0 --iter-decode-eos-penalty 0 --beam 1 \
+    --remove-bpe --max-tokens 4096 --seed 0 \
+    --model-overrides "{\"decode_strategy\":\"jointviterbi\",\"decode_viterbibeta\":1.0}" \
+    --path ${average_checkpoint_path}
+```
 
 ### BeamSearch
 
