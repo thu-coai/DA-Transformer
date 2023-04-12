@@ -135,8 +135,4 @@ experimental/*
 # Weights and Biases logs
 wandb/
 
-git_info
-current_revision
 .vscode
-
-/cod/tmp

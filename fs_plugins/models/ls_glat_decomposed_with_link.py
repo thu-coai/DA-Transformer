@@ -46,7 +46,7 @@ try:
 except ModuleNotFoundError as err:
     pass
 
-from .glat_decomposed_with_link import GlatDecomposedLink, GlatLinkDecoder, torch_seed
+from .glat_decomposed_with_link import GlatDecomposedLink, GlatLinkDecoder
 
 
 logger = logging.getLogger(__name__)
@@ -109,26 +109,19 @@ def init_bert_params(module):
         if module.config.layer_id == 0:
             normal_(module._get_weights(18).data)
 
-# @jit.script
-def logsumexp(x: Tensor, dim: int) -> Tensor:
-    m, _ = x.max(dim=dim)
-    mask = m == -float('inf')
-
-    s = (x - m.masked_fill_(mask, 0).unsqueeze(dim=dim)).exp().sum(dim=dim)
-    return s.masked_fill_(mask, 1).log() + m.masked_fill_(mask, -float('inf'))
-
 @register_model("ls_glat_decomposed_link")
 class LSGlatDecomposedLink(LSTransformerModel):
 
     def __init__(self, args, encoder, decoder):
         super().__init__(args, encoder, decoder)
+        self.src_dict = encoder.dictionary
         self.tgt_dict = decoder.dictionary
         self.bos = decoder.dictionary.bos()
         self.eos = decoder.dictionary.eos()
         self.pad = decoder.dictionary.pad()
         self.unk = decoder.dictionary.unk()
-
         self.ensemble_models = None
+        self.fast_generate = False
         self.init_beam_search()
 
     init_beam_search = GlatDecomposedLink.init_beam_search
@@ -140,6 +133,69 @@ class LSGlatDecomposedLink(LSTransformerModel):
     @property
     def allow_ensemble(self):
         return False
+
+    @classmethod
+    def build_model(cls, args, task):
+        model = super().build_model(args, task)
+
+        if args.load_pretrained_model is not None:
+            logging.info(f"Loading pretrained model from {args.load_pretrained_model}")
+            states = torch.load(args.load_pretrained_model, map_location='cpu')
+            extracted = True
+            if 'model' in states and 'args' in states:
+                states = states['model']
+                extracted = False
+
+            ## expanding embed_position
+            for position_name, target_position_length in [
+                ('encoder.embed_positions.weight', model.encoder.embed_positions.weight.size(0)), \
+                ('decoder.embed_positions.weight', model.decoder.embed_positions.weight.size(0))]:
+                if states[position_name].size(0) < target_position_length:
+                    logging.warn("Current max position length is longer than that of pre-trained checkpoints. Automatically extended...")
+                    _index = torch.arange(states[position_name].size(1))
+                    expand_position_states = states[position_name].clone()
+                    while states[position_name].size(0) < target_position_length:
+                        _index = torch.cat((_index[1:], _index[:1]), dim=0)
+                        states[position_name] = torch.cat([states[position_name], expand_position_states[:, _index]],
+                                                          dim=0)
+                if states[position_name].size(0) > target_position_length:
+                    logging.warn("Current max position length is shorter than that of pre-trained checkpoints. Automatically truncated...")
+                    states[position_name] = states[position_name][:target_position_length]
+
+            ## modifying parameter names for compatibility
+            for name in list(states.keys()):
+                if name.startswith("decoder.link_predictor."):
+                    states[name.replace("decoder.link_predictor.", "decoder.")] = states[name]
+                    states.pop(name)
+
+            if not args.segment_embedding:
+                if "decoder.embed_seg.weight" in states:
+                    logging.warn("--segment_embedding disabled. dropping decoder.embed_seg.weight ...")
+                    states.pop("decoder.embed_seg.weight")
+            else:
+                ckpt_seg = states["decoder.embed_seg.weight"]
+                init_seg = model.decoder.embed_seg.weight.data
+                copy_num = min(init_seg.shape[0], ckpt_seg.shape[0])
+                init_seg[:copy_num].copy_(ckpt_seg[:copy_num])
+                states["decoder.embed_seg.weight"] = init_seg
+
+            # Compatible (debug)
+            # if not extracted:
+            #     ckpt_pos = states["decoder.embed_positions.weight"]
+            #     init_pos = model.decoder.embed_positions.weight.data.zero_()
+            #     init_pos[2:].copy_(ckpt_pos[1:-1])
+            #     states["decoder.embed_positions.weight"] = init_pos
+
+            if "encoder.layers.0.fc1.bias" in states.keys():
+                logging.warn("Automatically converting fairseq transformer to lightseq transformer. "
+                    "Please make sure that the architecture is matched; otherwise it may cause unexpected behaviours.")
+                from ..scripts._convert_utils import convert_state_from_fs_to_ls
+                states = convert_state_from_fs_to_ls(states, args.decoder_embed_dim, args.decoder_ffn_embed_dim, args.decoder_layers)
+
+            model.load_state_dict(states)
+            args.load_pretrained_model = None  # Clear this param
+
+        return model
 
     @classmethod
     def build_decoder(cls, args, tgt_dict, embed_tokens):
@@ -156,84 +212,42 @@ class LSGlatDecomposedLink(LSTransformerModel):
         return encoder
 
     add_args = GlatDecomposedLink.add_args
-
     extract_valid_links = GlatDecomposedLink.extract_valid_links
     restore_valid_links = GlatDecomposedLink.restore_valid_links
     extract_links = GlatDecomposedLink.extract_links
     extract_features = GlatDecomposedLink.extract_features
     forward = GlatDecomposedLink.forward
-    initialize_output_tokens_with_length = GlatDecomposedLink.initialize_output_tokens_with_length
-    initialize_output_tokens_upsample_by_tokens = GlatDecomposedLink.initialize_output_tokens_upsample_by_tokens
-    initialize_output_tokens_multiplier_by_tokens = GlatDecomposedLink.initialize_output_tokens_multiplier_by_tokens
-    initialize_output_tokens_by_tokens = GlatDecomposedLink.initialize_output_tokens_by_tokens
-    initialize_output_tokens = GlatDecomposedLink.initialize_output_tokens
     max_positions = GlatDecomposedLink.max_positions
     forward_decoder = GlatDecomposedLink.forward_decoder
+    initialize_output_tokens_with_length = GlatDecomposedLink.initialize_output_tokens_with_length
     initialize_output_tokens = GlatDecomposedLink.initialize_output_tokens
+    inference_lookahead_repeatprevent = GlatDecomposedLink.inference_lookahead_repeatprevent
+    inference_lookahead_simple = GlatDecomposedLink.inference_lookahead_simple
+    inference_viterbi = GlatDecomposedLink.inference_viterbi
+    inference_sample = GlatDecomposedLink.inference_sample
+    inference_beamsearch = GlatDecomposedLink.inference_beamsearch
+    inference = GlatDecomposedLink.inference
 
     def forward_encoder(self, encoder_inputs):
         return self.encoder(encoder_inputs[0])
-   
-    def initialize_output_tokens_upsample(self, encoder_out, src_tokens):
-        # length prediction
-        if vars(self.args).get("src_upsample_scale", None) is not None:
-            length_tgt = torch.sum(src_tokens.ne(self.tgt_dict.pad_index), -1)
-            length_tgt = (length_tgt * self.args.src_upsample_scale).long().clamp_(min=2)
-        else:
-            assert self.args.src_upsample_fixed is not None, "Must specify --src-upsample-scale or --src-upsample-fixed"
-            length_tgt = torch.zeros(src_tokens.shape[0], device=src_tokens.device, dtype=src_tokens.dtype).fill_(self.args.src_upsample_fixed)
-        initial_output_tokens = self.initialize_output_tokens_with_length(src_tokens, length_tgt)
-
-        initial_output_scores = initial_output_tokens.new_zeros(
-            *initial_output_tokens.size()
-        ).type_as(encoder_out.encoder_out)
-
-        return DecoderOut(
-            output_tokens=initial_output_tokens,
-            output_scores=initial_output_scores,
-            attn=None,
-            step=0,
-            max_step=0,
-            history=None,
-        )
-
-    def initialize_output_tokens_multiplier(self, encoder_out, src_tokens):
-        # length prediction
-        length_tgt = self.decoder.forward_length_prediction(
-            self.decoder.forward_length(normalize=True, encoder_out=encoder_out),
-            encoder_out=encoder_out,
-        )
-        length_tgt = (length_tgt * self.args.length_multiplier).long().clamp_(min=2)
-        initial_output_tokens = self.initialize_output_tokens_with_length(src_tokens, length_tgt)
-
-        initial_output_scores = initial_output_tokens.new_zeros(
-            *initial_output_tokens.size()
-        ).type_as(encoder_out.encoder_out)
-
-        return DecoderOut(
-            output_tokens=initial_output_tokens,
-            output_scores=initial_output_scores,
-            attn=None,
-            step=0,
-            max_step=0,
-            history=None,
-        )
 
 class LSGlatLinkDecoder(LSNATransformerDecoder):
 
     def __init__(self, args, dictionary, embed_tokens):
         super().__init__(args, dictionary, embed_tokens)
         self.init_link_feature(args)
+        if self.args.segment_embedding:
+            self.init_seg_feature(args, dictionary)
+        self.project_in_dim = None
 
     init_link_feature = GlatLinkDecoder.init_link_feature
+    init_seg_feature = GlatLinkDecoder.init_seg_feature
 
     def build_decoder_layer(self, args):
         if args.max_decoder_batch_tokens is not None:
             max_batch_tokens = args.max_decoder_batch_tokens
-        elif args.src_upsample_scale is not None:
-            max_batch_tokens = int(args.max_tokens * args.src_upsample_scale)
         else:
-            raise RuntimeError("Must specify --max-decoder-batch-tokens if no --src_upsample_scale is not specified when using Lightseq Decoder")
+            raise RuntimeError("Must specify --max-decoder-batch-tokens when using Lightseq Decoder")
 
         config = LSFSTransformerDecoderLayer.get_config(
             max_batch_tokens=max_batch_tokens,
@@ -252,6 +266,39 @@ class LSGlatLinkDecoder(LSNATransformerDecoder):
         )
         return LSFSTransformerDecoderLayer(config)
 
+    forward_embedding = GlatLinkDecoder.forward_embedding
+
+    def extract_features(
+        self,
+        prev_output_tokens,
+        net_input,
+        encoder_out=None,
+        early_exit=None,
+        embedding_copy=False,
+        incremental_state=None,
+        **unused
+    ):
+        # x, prev_output_tokens = self.forward_embedding(
+        #     prev_output_tokens, incremental_state
+        # )
+        x, decoder_padding_mask = self.forward_embedding(prev_output_tokens, \
+                net_input['prev_output_tokens_segid'])
+
+        # x: [batch_size, seq_len, hidden_size]
+        for _, layer in enumerate(self.layers):
+            x, _, _ = layer(
+                x,
+                decoder_padding_mask,
+                encoder_out.encoder_out,
+                encoder_out.encoder_padding_mask,
+                incremental_state,
+            )
+
+        if self.layer_norm is not None:
+            x = self.layer_norm(x)
+
+        return x, {}
+
     @staticmethod
     def add_args(parser):
         pass
@@ -262,7 +309,6 @@ class LSGlatLinkDecoder(LSNATransformerDecoder):
 def base_architecture(args):
     args.max_source_positions = getattr(args, "max_source_positions", 300)
     args.max_target_positions = getattr(args, "max_target_positions", 300)
-
 
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
@@ -327,4 +373,34 @@ def base_architecture(args):
     "ls_glat_decomposed_link", "ls_glat_decomposed_link_base"
 )
 def base_architecture2(args):
+    base_architecture(args)
+
+@register_model_architecture(
+    "ls_glat_decomposed_link", "ls_glat_decomposed_link_pretrain"
+)
+def base_architecture_pretrain(args):
+    args.encoder_layers = getattr(args, "encoder_layers", 6)
+    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 768)
+    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 3072)
+    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 12)
+
+    args.decoder_layers = getattr(args, "decoder_layers", 6)
+    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 768)
+    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", 3072)
+    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 12)
+    base_architecture(args)
+
+@register_model_architecture(
+    "ls_glat_decomposed_link", "ls_glat_decomposed_link_big"
+)
+def big_architecture(args):
+    args.encoder_layers = getattr(args, "encoder_layers", 6)
+    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 1024)
+    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 4096)
+    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 16)
+
+    args.decoder_layers = getattr(args, "decoder_layers", 6)
+    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 1024)
+    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", 4096)
+    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 16)
     base_architecture(args)

@@ -34,21 +34,13 @@ from .utilities import parse_anneal_argument, get_anneal_value
 
 logger = logging.getLogger(__name__)
 
-########### gpu use tracker ###########
-# import inspect
-SHOW_MEMORY_USE=False
-if SHOW_MEMORY_USE:
-    from fairseq.gpu_mem_track import MemTracker
-    gpu_tracker = MemTracker()
-########################################
-
 @register_criterion("nat_dag_loss")
 class NATDAGLoss(FairseqCriterion):
 
     def __init__(self, cfg, task):
         super().__init__(task)
         self.cfg = cfg
-        assert cfg.label_smoothing == 0, "DAG does not support label smoothing"
+        assert cfg.label_smoothing == 0, "DAT loss does not support label smoothing for now"
         self.glance_strategy = cfg.glance_strategy
         self._glat_p_anneal_params = parse_anneal_argument(cfg.glat_p)
 
@@ -57,14 +49,19 @@ class NATDAGLoss(FairseqCriterion):
     @staticmethod
     def add_args(parser):
         """Add criterion-specific arguments to the parser."""
-        parser.add_argument("--label-smoothing", type=float, default=0, help="DA-Transformer does not use label smoothing for now")
-        parser.add_argument("--glat-p", type=str, default="0", help="Glancing probability. 0.5:0.1@200k indicates annealing p from 0.5 to 0.1 in 200k steps.")
-        parser.add_argument("--glance-strategy", type=str, default=None, help='Glancing strategy. Possible values: "number-random" or "None" or "CMLM"')
-        parser.add_argument("--no-force-emit", action="store_true", help="If true, do not fix the position of glance tokens in the second forward pass")
-
-        parser.add_argument("--torch-dag-logsoftmax-gather", action="store_true", help="Use torch implementation for logsoftmax-gather, which supports GPU and CPU device. (Cuda implementation only supports GPU)")
-        parser.add_argument("--torch-dag-best-alignment", action="store_true", help="Use torch implementation for dag-best-alignment, which supports GPU and CPU device. (Cuda implementation only supports GPU)")
-        parser.add_argument("--torch-dag-loss", action="store_true", help="Use torch implementation for dag-loss, which supports GPU and CPU device. (Cuda implementation only supports GPU)")
+        parser.add_argument("--label-smoothing", type=float, default=0,
+                        help="Set the label smoothing value. DA-Transformer does not use label smoothing for now.")
+        parser.add_argument("--glat-p", type=str, default="0",
+                            help="Set the glancing probability and its annealing schedule. For example, '0.5:0.1@200k' indicates annealing probability from 0.5 to 0.1 in 200k steps.")
+        parser.add_argument("--glance-strategy", type=str, default=None, help='Set the glancing strategy. Possible values: "number-random" or "None" or "CMLM"')
+        parser.add_argument("--no-force-emit", action="store_true", help="If true, the position of glanced tokens in the second forward pass will not be fixed.")
+        parser.add_argument("--use-pretrain-loss", action="store_true", help="If true, use the pre-training loss, i.e. the position of segment id will be fixed.")
+        parser.add_argument("--torch-dag-logsoftmax-gather", action="store_true",
+                            help="Use torch native implementation for logsoftmax-gather. It may be slower and consume more GPU memory.")
+        parser.add_argument("--torch-dag-best-alignment", action="store_true",
+                            help="Use torch native implementation for dag-best-alignment. It may be slower and consume more GPU memory.")
+        parser.add_argument("--torch-dag-loss", action="store_true",
+                            help="Use torch native implementation for dag-loss. It may be slower and consume more GPU memory.")
 
     def _compute_loss(self, outputs, targets, masks=None, label_smoothing=0.0, name="loss", factor=1.0):
         """
@@ -111,8 +108,52 @@ class NATDAGLoss(FairseqCriterion):
 
         return {"name": name, "loss": loss, "nll_loss": nll_loss, "factor": factor, "ntokens": outputs.shape[0], "loss_nofactor": loss_nofactor}
 
+    def _force_aligment(self, match, force_emit):
+        # force alignment by manipulating the tensor "match"
+        batch_size, tarlen, prelen = match.shape
+        matchmask = torch.zeros(batch_size, tarlen + 1, prelen, dtype=torch.bool, device=match.device).\
+                scatter_(1, force_emit.unsqueeze(1) + 1, 1)[:, 1:]
+        target_mask = matchmask.sum(dim=-1, keepdim=True) > 0
+        match = match.masked_fill(target_mask, 0) + torch.zeros_like(match).masked_fill_(~matchmask, float("-inf")).masked_fill_(~target_mask, 0)
+        # if output[j] is forced aligning to target[i], then: (1) match[i][j]:=0 and (2) forall k!=j, match[i][k]:="-inf"
+        # the final loss will be the sum of the losses on all fragments
+        return match
+
+    @torch.no_grad()
+    def _brute_force_fragment_sum(self, match, force_emit, links):
+        # a function for debugging. Use a brute force method to calculate the sum of loss on all fragments
+        match = match.clone()
+        force_emit = force_emit.clone()
+        links = links.clone()
+        batch_size, tarlen, prelen = match.shape
+        res = torch.zeros(batch_size, dtype=torch.float32, device=match.device)
+
+        for i in range(batch_size):
+            force_emit_sample = force_emit[i].cpu()
+            lastj = 0
+            lasttarj = 0
+            for j in range(1, prelen):
+                if force_emit_sample[j] >= 0 or j == prelen - 1:
+                    if j == prelen - 1:
+                        nowj = j
+                        nowtarj = tarlen - 1
+                    else:
+                        nowj = j
+                        nowtarj = force_emit_sample[j]
+                    match_extract = match[i:i+1, lasttarj:nowtarj+1, lastj:nowj+1]
+                    links_extract = links[i:i+1, lastj:nowj+1, lastj:nowj+1]
+                    target_length = torch.tensor([match_extract.shape[1]])
+                    output_length = torch.tensor([match_extract.shape[2]])
+                    res[i] += torch_dag_loss(match_extract, links_extract, output_length, target_length)[0] - match_extract[0, 0, 0] - match_extract[0, -1, -1]
+
+                    lastj = nowj
+                    lasttarj = nowtarj
+
+        return res
+
+
     def _compute_dag_loss(self, outputs, output_masks, targets, target_masks, links, label_smoothing=0.0, name="loss",
-                factor=1.0, matchmask=None, keep_word_mask=None, model=None):
+                factor=1.0, force_emit=None, model=None):
 
         batch_size = outputs.shape[0]
         prelen = outputs.shape[1]
@@ -122,23 +163,29 @@ class NATDAGLoss(FairseqCriterion):
         target_length = target_masks.sum(dim=-1)
 
         if self.cfg.torch_dag_logsoftmax_gather:
-            outputs, match_all = torch_dag_logsoftmax_gather_inplace(outputs, targets.unsqueeze(1).expand(-1, prelen, -1))
+            outputs, match = torch_dag_logsoftmax_gather_inplace(outputs, targets.unsqueeze(1).expand(-1, prelen, -1))
         else:
-            outputs, match_all = dag_logsoftmax_gather_inplace(outputs, targets.unsqueeze(1).expand(-1, prelen, -1))
-        match_all = match_all.transpose(1, 2)
+            outputs, match = dag_logsoftmax_gather_inplace(outputs, targets.unsqueeze(1).expand(-1, prelen, -1))
+        match = match.transpose(1, 2)
 
-        if matchmask is not None and not self.cfg.no_force_emit:
-            glat_prev_mask = keep_word_mask.unsqueeze(1)
-            match_all = match_all.masked_fill(glat_prev_mask, 0) + match_all.masked_fill(~matchmask, float("-inf")).masked_fill(~glat_prev_mask, 0).detach()
+        # verify the loss sum on all fragments is correct
+        # assert model.args.max_transition_length != -1
+        # tmp = self._brute_force_fragment_sum(match, force_emit, model.restore_valid_links(links))
+
+        # if matchmask is not None and not self.cfg.no_force_emit:
+        #     glat_prev_mask = keep_word_mask.unsqueeze(1)
+        #     match = match.masked_fill(glat_prev_mask, 0) + match.masked_fill(~matchmask, float("-inf")).masked_fill(~glat_prev_mask, 0).detach()
+        if force_emit is not None:
+            match = self._force_aligment(match, force_emit)
         nvalidtokens = output_masks.sum()
 
         if self.cfg.torch_dag_loss:
             if model.args.max_transition_length != -1:
                 links = model.restore_valid_links(links)
-            loss_result = torch_dag_loss(match_all, links, output_length, target_length)
+            loss_result = torch_dag_loss(match, links, output_length, target_length)
         else:
             assert model.args.max_transition_length != -1, "cuda dag loss does not support max_transition_length=-1. You can use a very large number such as 99999"
-            loss_result = dag_loss(match_all, links, output_length, target_length)
+            loss_result = dag_loss(match, links, output_length, target_length)
 
         invalid_masks = loss_result.isinf().logical_or(loss_result.isnan())
         loss_result.masked_fill_(invalid_masks, 0)
@@ -169,13 +216,6 @@ class NATDAGLoss(FairseqCriterion):
         3) logging outputs to display while training
         """
 
-        # import gc
-        # gc.collect()
-        if SHOW_MEMORY_USE:
-            print(torch.cuda.memory_reserved() / 1024 / 1024, file=sys.stderr, flush=True)
-            gpu_tracker.clear_cache()
-        # gpu_tracker.track()
-
         # B x T
         src_tokens, src_lengths = (
             sample["net_input"]["src_tokens"],
@@ -183,13 +223,10 @@ class NATDAGLoss(FairseqCriterion):
         )
         tgt_tokens = sample["target"]
 
-        if SHOW_MEMORY_USE:
-            print(sample["net_input"]["src_tokens"].shape[0], sample["net_input"]["src_tokens"].shape[1], tgt_tokens.shape[1], file=sys.stderr, end=" ")
-
         if sample.get("update_num", None) is not None: # in training
             self.set_update_num(sample['update_num'])
 
-        prev_output_tokens = model.initialize_output_tokens_by_tokens(src_tokens, tgt_tokens)
+        prev_output_tokens = sample['net_input']['prev_output_tokens']
 
         if self.glat_p == 0:
             glat = None
@@ -199,7 +236,7 @@ class NATDAGLoss(FairseqCriterion):
                 "require_glance_grad": False
             }
 
-        def glat_function(model, word_ins_out, tgt_tokens, prev_output_tokens, glat, links=None):
+        def glat_function(model, word_ins_out, tgt_tokens, prev_output_tokens, net_input, glat, links=None):
             batch_size, prelen, _ = links.shape
             tarlen = tgt_tokens.shape[1]
             nonpad_positions = ~tgt_tokens.eq(model.pad)
@@ -213,6 +250,18 @@ class NATDAGLoss(FairseqCriterion):
                 word_ins_out, match = dag_logsoftmax_gather_inplace(word_ins_out, tgt_tokens.unsqueeze(1).expand(-1, prelen, -1))
             match = match.transpose(1, 2)
 
+            force_emit = net_input['force_emit'] # force_emit is Not None only if using --upsample_base predict
+            if force_emit is None:
+                force_emit = -torch.ones_like(prev_output_tokens, dtype=torch.long) # do not force alignments
+
+            if self.cfg.use_pretrain_loss:
+                # forcing alignment on fragment IDs by manipulating the tensor "match"
+                assert self.cfg.upsample_base == "predict", "pretrain only allowed when using upsample_base = predict"
+                match = self._force_aligment(match, force_emit)
+                glat_prev_mask = force_emit >= 0 # these output positions should be preserved during remasking
+            else:
+                glat_prev_mask = torch.zeros_like(prev_output_tokens, dtype=torch.bool)
+
             if self.cfg.torch_dag_best_alignment:
                 if model.args.max_transition_length != -1:
                     links = model.restore_valid_links(links)
@@ -221,18 +270,17 @@ class NATDAGLoss(FairseqCriterion):
                 assert model.args.max_transition_length != -1, "cuda dag best alignment does not support max_transition_length=-1. You can use a very large number such as 99999"
                 path = dag_best_alignment(match, links, output_length, target_length) # batch * prelen
 
-            predict_align_mask = path >= 0
-            matchmask = torch.zeros(batch_size, tarlen + 1, prelen, device=match.device, dtype=torch.bool).scatter_(1, path.unsqueeze(1) + 1, 1)[:, 1:]
+            predict_assigned_mask = path >= 0
             oracle = tgt_tokens.gather(-1, path.clip(min=0)) # bsz * prelen
-            same_num = ((pred_tokens == oracle) & predict_align_mask).sum(1)
+            same_num = ((pred_tokens == oracle) & predict_assigned_mask & ~glat_prev_mask).sum(1)
 
             if self.glance_strategy is None:
-                keep_prob = ((target_length - same_num) / target_length * glat['context_p']).unsqueeze(-1) * predict_align_mask.float()
+                keep_prob = ((target_length - glat_prev_mask.sum(dim=-1) - same_num) / target_length * glat['context_p']).unsqueeze(-1) * predict_assigned_mask.float()
 
-            elif self.glance_strategy in ['number-random']:
+            elif self.glance_strategy == 'number-random': # original glat implementation
                 prob = torch.randn(oracle.shape, device=tgt_tokens.device, dtype=torch.float)
-                prob.masked_fill_(~predict_align_mask, -100)
-                glance_nums = ((target_length - same_num) * glat['context_p'] + 0.5).to(torch.long)
+                prob.masked_fill_(~predict_assigned_mask | glat_prev_mask, -100)
+                glance_nums = ((target_length - glat_prev_mask.sum(dim=-1) - same_num) * glat['context_p'] + 0.5).to(torch.long)
                 #prob_thresh = prob.topk(glance_nums.max().clip(min=1))[0].gather(-1, (glance_nums - 1).clip(min=0).unsqueeze(-1)).squeeze(-1)
                 prob_thresh = prob.sort(descending=True)[0].gather(-1, (glance_nums - 1).clip(min=0).unsqueeze(-1)).squeeze(-1)
                 prob_thresh.masked_fill_(glance_nums == 0, 100)
@@ -240,30 +288,30 @@ class NATDAGLoss(FairseqCriterion):
 
             elif self.glance_strategy == "cmlm":
                 prob = torch.randn(oracle.shape, device=tgt_tokens.device, dtype=torch.float)
-                prob.masked_fill_(~predict_align_mask, -100)
-                glance_nums = (target_length * torch.rand_like(target_length, dtype=torch.float) + 0.5).to(torch.long)
+                prob.masked_fill_(~predict_assigned_mask | glat_prev_mask, -100)
+                glance_nums = ((target_length - glat_prev_mask.sum(dim=-1)) * torch.rand_like(target_length, dtype=torch.float) + 0.5).to(torch.long)
                 #prob_thresh = prob.topk(glance_nums.max().clip(min=1))[0].gather(-1, (glance_nums - 1).clip(min=0).unsqueeze(-1)).squeeze(-1)
                 prob_thresh = prob.sort(descending=True)[0].gather(-1, (glance_nums - 1).clip(min=0).unsqueeze(-1)).squeeze(-1)
                 prob_thresh.masked_fill_(glance_nums == 0, 100)
                 keep_prob = (prob >= prob_thresh.unsqueeze(-1)).to(prob.dtype)
 
-            keep_word_mask = (torch.rand(prev_output_tokens.shape, device=prev_output_tokens.device) < keep_prob).bool()
+            keep_word_mask = (torch.rand(prev_output_tokens.shape, device=prev_output_tokens.device) < keep_prob).bool() | glat_prev_mask.squeeze(1)
 
             glat_prev_output_tokens = prev_output_tokens.masked_fill(keep_word_mask, 0) + oracle.masked_fill(~keep_word_mask, 0)
             glat_tgt_tokens = tgt_tokens
+            next_force_emit = path.masked_fill(~keep_word_mask, -1)
 
             glat_info = {
                 "glat_accu": (same_num.sum() / target_length.sum()).detach(),
                 "glat_context_p": glat['context_p'],
                 "glat_keep": keep_prob.mean().detach(),
-                "matchmask": matchmask,
-                "keep_word_mask": keep_word_mask,
+                "force_emit": next_force_emit,
                 "glat_prev_output_tokens": glat_prev_output_tokens,
             }
 
             return glat_prev_output_tokens, glat_tgt_tokens, glat_info
 
-        outputs = model(src_tokens, src_lengths, prev_output_tokens, tgt_tokens, glat, glat_function)
+        outputs = model(src_tokens, src_lengths, prev_output_tokens, tgt_tokens, sample['net_input'], glat, glat_function)
 
         losses = []
 
@@ -276,8 +324,7 @@ class NATDAGLoss(FairseqCriterion):
             outputs["links"],
             name="dag-loss",
             factor=1,
-            matchmask=outputs.get('matchmask', None),
-            keep_word_mask=outputs.get('keep_word_mask', None),
+            force_emit=outputs.get('force_emit', None),
             model=model
         )
 

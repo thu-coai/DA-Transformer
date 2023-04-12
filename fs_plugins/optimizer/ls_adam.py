@@ -59,7 +59,7 @@ class LSFSAdam(FairseqOptimizer):
         logger.info("using LightSeq Adam")
         assert use_fused_adam
         self._optimizer = fused_adam_cls(params, **self.optimizer_config)
-        
+
     @property
     def optimizer_config(self):
         """

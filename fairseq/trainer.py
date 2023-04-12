@@ -772,8 +772,50 @@ class Trainer(object):
         # task specific setup per validation epoch
         self.task.begin_valid_epoch(epoch, self.get_model())
 
+    def _split_batch(self, samples):
+        # split samples
+        if self.cfg.optimization.batch_split_by_src > 0:
+            new_samples = []
+
+            for sample in samples:
+                if 'net_input' not in sample:
+                    new_samples.append(sample)
+                    continue
+                batch_size, srclen = sample['net_input']['src_tokens'].shape
+                tgtlen = sample['target'].shape[1]
+                # split_num = bisect_right(self.cfg.optimization.split_batch_by_length, length)
+                split_num = batch_size * srclen // self.cfg.optimization.batch_split_by_src + 1
+                # print(split_num, srclen, tgtlen, file=sys.stderr, flush=True)
+                if split_num == 1:
+                    new_samples.append(sample)
+                else:
+                    new_samples += [{"net_input":{}} for _ in range(split_num)]
+
+                    # sample id an target
+                    for key, value in sample.items():
+                        if torch.is_tensor(value):
+                            chunks = torch.chunk(value, split_num)
+                            for i, chunk in enumerate(chunks):
+                                new_samples[-split_num + i][key] = chunk
+                    # tensor in net_input
+                    for key, value in sample['net_input'].items():
+                        if torch.is_tensor(value):
+                            chunks = torch.chunk(value, split_num)
+                            for i, chunk in enumerate(chunks):
+                                new_samples[-split_num + i]['net_input'][key] = chunk
+                        else:
+                            for i in range(split_num):
+                                new_samples[-split_num + i]['net_input'][key] = value
+                    # nsentences, ntokens
+                    for i in range(split_num):
+                        new_samples[-split_num + i]['nsentences'] = new_samples[-split_num + i]['id'].shape[0]
+                        new_samples[-split_num + i]['ntokens'] = (new_samples[-split_num + i]['target'] != self.task.tgt_dict.pad()).sum().tolist()
+            return new_samples
+        return samples
+
     def reset_dummy_batch(self, batch):
-        self._dummy_batch = batch
+        samples = self._split_batch([batch])
+        self._dummy_batch = samples[0]
 
     @metrics.aggregate("train")
     def train_step(self, samples, raise_oom=False):
@@ -794,6 +836,7 @@ class Trainer(object):
 
         # forward and backward pass
         logging_outputs, sample_size, ooms = [], 0, 0
+        samples = self._split_batch(samples)
         for i, sample in enumerate(samples):  # delayed update loop
             sample, is_dummy_batch = self._prepare_sample(sample)
 

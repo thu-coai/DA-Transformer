@@ -368,6 +368,8 @@ def batch_by_size(
 def post_process(sentence: str, symbol: str):
     if symbol == "sentencepiece":
         sentence = sentence.replace(" ", "").replace("\u2581", " ").strip()
+    elif symbol == "gpt":
+        sentence = sentence.replace(" ", "").replace("\u0120", " ").replace("\u010A", "\n").strip()
     elif symbol == "wordpiece":
         sentence = sentence.replace(" ", "").replace("_", " ").strip()
     elif symbol == "letter":
@@ -382,6 +384,9 @@ def post_process(sentence: str, symbol: str):
     elif symbol in {"subword_nmt", "@@ ", "@@"}:
         if symbol == "subword_nmt":
             symbol = "@@ "
+        sentence = (sentence + " ").replace(symbol, "").rstrip()
+    elif symbol in {"bert", " ##", "##"}:
+        symbol = " ##"
         sentence = (sentence + " ").replace(symbol, "").rstrip()
     elif symbol == "none":
         pass

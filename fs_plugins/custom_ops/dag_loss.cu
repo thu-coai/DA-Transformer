@@ -107,7 +107,7 @@ __global__ void calculate_alpha_kernel(
         if_constexpr (TRANS_BLOCK_SIZE > 1) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 1, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
         maxval = __shfl_sync(shfl_mask, maxval, 0, TRANS_BLOCK_SIZE);
         // if(t == 1 && threadIdx.y == 1) printf("%d %d %d %d: aft1_maxval = %f\n", blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, maxval);
-        
+
         shfl_mask = __ballot_sync(shfl_mask, !isinf(maxval));
         float res;
         if (isinf(maxval)){
@@ -241,8 +241,8 @@ __global__ void calculate_beta_kernel(
             if_constexpr (TRANS_BLOCK_SIZE > 2) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 2, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
             if_constexpr (TRANS_BLOCK_SIZE > 1) {scalar_t nextval = __shfl_down_sync(shfl_mask, maxval, 1, TRANS_BLOCK_SIZE); if(nextval > maxval) maxval = nextval;}
             maxval = __shfl_sync(shfl_mask, maxval, 0, TRANS_BLOCK_SIZE);
-            
-            shfl_mask = __ballot_sync(shfl_mask, !isinf(maxval));        
+
+            shfl_mask = __ballot_sync(shfl_mask, !isinf(maxval));
             float res;
             if (isinf(maxval)){
                 res = maxval;
@@ -310,7 +310,7 @@ void invoke_calculate_beta(cudaStream_t stream, torch::Tensor &beta, const torch
 }
 
 
-std::tuple<torch::Tensor, torch::Tensor> dag_loss(const torch::Tensor &match_all, const torch::Tensor &links, 
+std::tuple<torch::Tensor, torch::Tensor> dag_loss(const torch::Tensor &match_all, const torch::Tensor &links,
     const torch::Tensor &output_length, const torch::Tensor &target_length, bool require_gradient,
     int config)
 {
@@ -516,7 +516,7 @@ void invoke_calculate_grad_links(cudaStream_t stream, torch::Tensor &grad_links,
 }
 
 std::tuple<torch::Tensor, torch::Tensor> dag_loss_backward(const torch::Tensor &grad_output, const torch::Tensor &alpha, const torch::Tensor &beta,
-            const torch::Tensor &match_all, const torch::Tensor &links, const torch::Tensor &output_length, const torch::Tensor &target_length, 
+            const torch::Tensor &match_all, const torch::Tensor &links, const torch::Tensor &output_length, const torch::Tensor &target_length,
             int config1, int config2)
 {
     // CHECK_CUDA(match_all);  // bsz * tarlen * prelen
@@ -549,7 +549,7 @@ std::tuple<torch::Tensor, torch::Tensor> dag_loss_backward(const torch::Tensor &
         case 2: invoke_calculate_grad_match_all<4, 128, 4>(current_stream, grad_match_all, grad_output, alpha, beta, match_all, links, output_length, target_length, bsz, prelen, tarlen, translen); break;
         default: TORCH_CHECK(config1 <= 2 && config1 >= 1, "config1 should be 1~2");
     }
-    
+
 
     // calculate grad_links
     cudaStream_t new_stream;

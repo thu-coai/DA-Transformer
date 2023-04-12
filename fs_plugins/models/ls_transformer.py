@@ -184,9 +184,10 @@ class LSTransformerModel(FairseqEncoderDecoderModel):
 
         if getattr(cfg, "offload_activations", False):
             cfg.checkpoint_activations = True  # offloading implies checkpointing
-           
+
         encoder = cls.build_encoder(cfg, src_dict, encoder_embed_tokens)
         decoder = cls.build_decoder(cfg, tgt_dict, decoder_embed_tokens)
+        assert cfg.max_encoder_batch_tokens <= cfg.max_encoder_batch_tokens, "max_encoder_batch_tokens should not be smaller than max_encoder_batch_tokens when using LightSeq Transformer"
 
         if not cfg.share_all_embeddings:
             cfg.min_params_to_wrap = getattr(
@@ -266,8 +267,13 @@ class LSTransformerEncoder(FairseqEncoder):
             self.layer_norm = None
 
     def build_encoder_layer(self, args):
+        if args.max_encoder_batch_tokens is not None:
+            max_batch_tokens = args.max_encoder_batch_tokens
+        else:
+            raise RuntimeError("Must specify --max-encoder-batch-tokens when using Lightseq Encoder")
+
         config = LSTransformerEncoderLayer.get_config(
-            max_batch_tokens=args.max_tokens,
+            max_batch_tokens=max_batch_tokens,
             max_seq_len=args.max_source_positions,
             hidden_size=args.encoder_embed_dim,
             intermediate_size=args.encoder_ffn_embed_dim,
@@ -489,7 +495,7 @@ class LSTransformerDecoder(FairseqIncrementalDecoder):
         x = self.dropout_module(x)
 
         return x, prev_output_tokens
-        
+
 
     def forward(
         self, prev_output_tokens, encoder_out, incremental_state=None, **kwargs

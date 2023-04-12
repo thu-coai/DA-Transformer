@@ -624,6 +624,16 @@ class OptimizationConfig(FairseqDataclass):
             " (default is to skip it)."
         },
     )
+    batch_split_by_src: int = field(
+        default=0,
+        metadata={
+            "help": "If this value is greater than 0, it splits a batch into multiple smaller batches. "
+                "The split is based on the number of source tokens in each batch (considering padding tokens), "
+                "ensuring that no batch has more source tokens than the specified value. "
+                "This is different from --update-freq because it works on each GPU separately. It's useful when out-of-memory (OOM) errors occur rarely "
+                "and you do not want to set a smaller batch size.",
+        },
+    )
 
 
 @dataclass

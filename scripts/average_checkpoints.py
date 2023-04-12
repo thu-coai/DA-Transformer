@@ -73,9 +73,9 @@ def average_checkpoints(inputs):
     return new_state
 
 
-def last_n_checkpoints(paths, n, update_based, upper_bound=None):
-    assert len(paths) == 1
-    path = paths[0]
+def last_n_checkpoints(path, n, update_based, upper_bound=None):
+    # assert len(paths) == 1
+    # path = paths[0]
     if update_based:
         pt_regexp = re.compile(r"checkpoint_\d+_(\d+)\.pt")
     else:
@@ -95,6 +95,38 @@ def last_n_checkpoints(paths, n, update_based, upper_bound=None):
         )
     return [os.path.join(path, x[1]) for x in sorted(entries, reverse=True)[:n]]
 
+def checkpoint_paths(path, pattern=r'checkpoint(\d+)\.pt'):
+    """Retrieves all checkpoints found in `path` directory.
+
+    Checkpoints are identified by matching filename to the specified pattern. If
+    the pattern contains groups, the result will be sorted by the first group in
+    descending order.
+    """
+    pt_regexp = re.compile(pattern)
+    files = PathManager.ls(path)
+
+    entries = []
+    for i, f in enumerate(files):
+        m = pt_regexp.fullmatch(f)
+        if m is not None:
+            idx = float(m.group(1)) if len(m.groups()) > 0 else i
+            entries.append((idx, m.group(0)))
+    return [os.path.join(path, x[1]) for x in sorted(entries, reverse=True)]
+
+def best_n_checkpoints(paths, n, max_metric, best_checkpoints_metric):
+    checkpoints = checkpoint_paths(
+        paths,
+        pattern=r"checkpoint\.best_{}_(\d+\.?\d*)\.pt".format(
+            best_checkpoints_metric
+        ),
+    )
+
+    if not max_metric:
+        checkpoints = checkpoints[::-1]
+
+    if len(checkpoints) < n:
+        raise RuntimeError(f"num is too large, not enough checkpoints: {str(checkpoints)}")
+    return checkpoints[:n]
 
 def main():
     parser = argparse.ArgumentParser(
@@ -121,17 +153,24 @@ def main():
                         'e.g., with --num-update-checkpoints=10 --checkpoint-upper-bound=50000, checkpoints 40500-50000 would'
                         ' be averaged assuming --save-interval-updates 500'
                         )
+    parser.add_argument('--best-checkpoints-metric', type=str, default=None)
+    parser.add_argument('--max-metric', action="store_true", default=False)
+    parser.add_argument('--num-best-checkpoints-metric', type=int, default=None)
     # fmt: on
     args = parser.parse_args()
     print(args)
 
     num = None
-    is_update_based = False
+    is_update_based = "epoch"
     if args.num_update_checkpoints is not None:
         num = args.num_update_checkpoints
-        is_update_based = True
+        is_update_based = "update"
     elif args.num_epoch_checkpoints is not None:
         num = args.num_epoch_checkpoints
+    elif args.num_best_checkpoints_metric is not None:
+        num = args.num_best_checkpoints_metric
+        is_update_based = "metric"
+
 
     assert args.checkpoint_upper_bound is None or (
         args.num_epoch_checkpoints is not None
@@ -142,12 +181,14 @@ def main():
     ), "Cannot combine --num-epoch-checkpoints and --num-update-checkpoints"
 
     if num is not None:
-        args.inputs = last_n_checkpoints(
-            args.inputs,
-            num,
-            is_update_based,
-            upper_bound=args.checkpoint_upper_bound,
-        )
+        if is_update_based == "metric":
+            args.inputs = best_n_checkpoints(
+                args.inputs[0], num, args.max_metric, args.best_checkpoints_metric
+            )
+        else:
+            args.inputs = last_n_checkpoints(
+                args.inputs[0], num, is_update_based == "update", upper_bound=args.checkpoint_upper_bound,
+            )
         print("averaging checkpoints: ", args.inputs)
 
     new_state = average_checkpoints(args.inputs)
