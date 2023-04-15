@@ -82,13 +82,6 @@ def _main(cfg: DictConfig, output_file):
     # Load dataset splits
     task = tasks.setup_task(cfg.task)
 
-    # Set dictionaries
-    try:
-        src_dict = getattr(task, "source_dictionary", None)
-    except NotImplementedError:
-        src_dict = None
-    tgt_dict = task.target_dictionary
-
     overrides = ast.literal_eval(cfg.common_eval.model_overrides)
 
     # Load ensemble
@@ -101,6 +94,13 @@ def _main(cfg: DictConfig, output_file):
         strict=(cfg.checkpoint.checkpoint_shard_count == 1),
         num_shards=cfg.checkpoint.checkpoint_shard_count,
     )
+
+    # Set dictionaries
+    try:
+        src_dict = getattr(task, "source_dictionary", None)
+    except NotImplementedError:
+        src_dict = None
+    tgt_dict = task.target_dictionary
 
     # loading the dataset should happen after the checkpoint has been loaded so we can give it the saved task config
     task.load_dataset(cfg.dataset.gen_subset, task_cfg=saved_cfg.task)
@@ -411,15 +411,24 @@ def _main(cfg: DictConfig, output_file):
 def cli_main():
     parser = options.get_generation_parser()
     # TODO: replace this workaround with refactoring of `AudioPretraining`
-    parser.add_argument(
-        "--arch",
-        "-a",
-        metavar="ARCH",
-        default="wav2vec2",
-        help="Model architecture. For constructing tasks that rely on "
-        "model args (e.g. `AudioPretraining`)",
-    )
-    args = options.parse_args_and_arch(parser)
+    # parser.add_argument(
+    #     "--arch",
+    #     "-a",
+    #     metavar="ARCH",
+    #     default="wav2vec2",
+    #     help="Model architecture. For constructing tasks that rely on "
+    #     "model args (e.g. `AudioPretraining`)",
+    # )
+    import argparse
+    debug_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    debug_parser.add_argument("--debug", action="store_true")
+    debug_args, left_args = debug_parser.parse_known_args()
+    if debug_args.debug:
+        import debugpy
+        debugpy.listen(("0.0.0.0", 5679))
+        logging.info("wait debug")
+        debugpy.wait_for_client()
+    args = options.parse_args_and_arch(parser, input_args=left_args)
     main(args)
 
 

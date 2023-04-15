@@ -32,7 +32,7 @@ from fairseq.data import (
     indexed_dataset,
 )
 from fairseq.data.indexed_dataset import get_available_dataset_impl
-from fairseq.tasks import register_task
+from fairseq.tasks import register_task, FairseqTask
 from fairseq.data import FairseqDataset, data_utils, iterators
 from fairseq.tasks.translation import TranslationConfig, TranslationTask
 from fairseq.utils import new_arange
@@ -290,9 +290,93 @@ class TranslationDATConfig(FairseqDataclass):
         default=False, metadata={"help": "Prepends the beginning of sentence token (bos) to the source sequence. "
             "(Note: The target sequence always contains both bos and eos tokens in the DA-Transformer.) Default: False."}
     )
-    override_task_args: bool = field(
-        default=False, metadata={"help": "Overrides the task arguments stored in checkpoints during invoking fairseq-generate or fairseq-validate. "
-            "This is useful if you want to change decoding behavior during inference."}
+
+    decode_upsample_scale: Optional[float] = field(
+        default=None, metadata={"help": "Upsampling scale to determine the DAG size during inference."}
+    )
+    decode_strategy: str = field(
+        default="lookahead",
+        metadata={"help": 'Decoding strategy to use. Options include "greedy", "lookahead", "viterbi", "jointviterbi", "sample", and "beamsearch".'}
+    )
+
+    decode_no_consecutive_repeated_ngram: int = field(
+        default=0, metadata={
+            "help": "Prevent consecutive repeated k-grams (k <= n) in the generated text. Use 0 to disable this feature. This argument is used in greedy, lookahead, sample, and beam search decoding methods."
+        }
+    )
+    decode_no_repeated_ngram: int = field(
+        default=0, metadata={
+            "help": "Prevent repeated k-grams (not necessarily consecutive) with order n or higher in the generated text. Use 0 to disable this feature. This argument is used in greedy, lookahead, sample, and beam search decoding methods."
+        }
+    )
+    decode_top_cand_n: float = field(
+        default=5, metadata={
+            "help": "Number of top candidates to consider during transition. This argument is used in greedy and lookahead decoding with ngram prevention, and sample and beamsearch decoding methods."
+        }
+    )
+    decode_top_p: float = field(
+        default=0.9, metadata={
+            "help": "Maximum probability of top candidates to consider during transition. This argument is used in greedy and lookahead decoding with ngram prevention, and sample and beamsearch decoding methods."
+        }
+    )
+    decode_viterbibeta: float = field(
+        default=1, metadata={
+            "help": "Parameter used for length penalty in Viterbi decoding. The sentence with the highest score is found using: P(A,Y|X) / |Y|^{beta}"
+        }
+    )
+    decode_temperature: float = field(
+        default=1, metadata={
+            "help": "Temperature to use in sample decoding."
+        }
+    )
+
+    decode_beamsize: float = field(
+        default=100, metadata={"help": "Beam size used in beamsearch decoding."}
+    )
+    decode_max_beam_per_length: float = field(
+            default=10, metadata={"help": "Maximum number of beams with the same length in each step during beamsearch decoding."}
+        )
+    decode_gamma: float = field(
+            default=0.1, metadata={"help": "Parameter used for n-gram language model score in beamsearch decoding. "
+                                            "The sentence with the highest score is found using: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]"}
+        )
+    decode_alpha: float = field(
+            default=1.1, metadata={"help": "Parameter used for length penalty in beamsearch decoding. "
+                                            "The sentence with the highest score is found using: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]"}
+        )
+    decode_beta: float = field(
+            default=1, metadata={"help": "Parameter used to scale the score of logits in beamsearch decoding. "
+                                            "The score of a sentence is given by: sum P(y_i|a_i) + beta * sum log(a_i|a_{i-1})"}
+        )
+    decode_lm_path: Optional[str] = field(
+            default=None, metadata={"help": "Path to n-gram language model to use during beamsearch decoding. Set to None to disable n-gram LM."}
+        )
+    decode_max_batchsize: int = field(
+            default=32, metadata={"help": "Maximum batch size to use during beamsearch decoding. "
+                                            "Should not be smaller than the actual batch size, as it is used for memory allocation."}
+        )
+    decode_max_workers: int = field(
+            default=1, metadata={"help": 'Number of multiprocess workers to use during beamsearch decoding. '
+                                        'More workers will consume more memory. It does not affect decoding latency but decoding throughtput, '
+                                        'so you must use "fariseq-fastgenerate" to enable the overlapped decoding to tell the difference.'}
+        )
+    decode_threads_per_worker: int = field(
+            default=4, metadata={"help": "Number of threads per worker to use during beamsearch decoding. "
+                                            "This setting also applies to both vanilla decoding and overlapped decoding. A value between 2 and 8 is typically optimal."}
+        )
+    decode_dedup: bool = field(
+        default=False, metadata={"help": "Enable token deduplication in BeamSearch."}
+    )
+    max_encoder_batch_tokens: Optional[int] = field(
+        default=None,
+        metadata={"help": 'Specifies the maximum number of tokens for the encoder input to avoid running out of memory. The default value of None indicates no limit.'},
+    )
+    max_decoder_batch_tokens: Optional[int] = field(
+        default=None,
+        metadata={"help": 'Specifies the maximum number of tokens for the decoder input to avoid running out of memory. The default value of None indicates no limit.'},
+    )
+    do_not_load_task_args: bool = field(
+        default=False, metadata={"help": "Do not load task arguments stored in checkpoints."}
     )
 
 @register_task("translation_dat_task", dataclass=TranslationDATConfig)
@@ -300,38 +384,12 @@ class TranslationDATTask(TranslationTask):
 
     cfg: TranslationDATConfig
 
+    def __init__(self, cfg):
+        FairseqTask.__init__(self, cfg)
+
     @classmethod
     def setup_task(cls, cfg: TranslationConfig, **kwargs):
-        """Setup the task (e.g., load dictionaries).
-
-        Args:
-            args (argparse.Namespace): parsed command-line arguments
-        """
-
-        paths = utils.split_paths(cfg.data)
-        assert len(paths) > 0
-        # find language pair automatically
-        if cfg.source_lang is None or cfg.target_lang is None:
-            cfg.source_lang, cfg.target_lang = data_utils.infer_language_pair(paths[0])
-        if cfg.source_lang is None or cfg.target_lang is None:
-            raise Exception(
-                "Could not infer language pair, please provide it explicitly"
-            )
-
-        # load dictionaries
-        src_dict = TranslationDATDict.load(
-            os.path.join(paths[0], "dict.{}.txt".format(cfg.source_lang)), seg_tokens=cfg.seg_tokens
-        )
-        tgt_dict = TranslationDATDict.load(
-            os.path.join(paths[0], "dict.{}.txt".format(cfg.target_lang)), seg_tokens=cfg.seg_tokens
-        )
-        assert src_dict.pad() == tgt_dict.pad()
-        assert src_dict.eos() == tgt_dict.eos()
-        assert src_dict.unk() == tgt_dict.unk()
-        logger.info("[{}] dictionary: {} types".format(cfg.source_lang, len(src_dict)))
-        logger.info("[{}] dictionary: {} types".format(cfg.target_lang, len(tgt_dict)))
-
-        return cls(cfg, src_dict, tgt_dict)
+        return cls(cfg)
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
         """Load a given dataset split.
@@ -345,19 +403,6 @@ class TranslationDATTask(TranslationTask):
             # if not training data set, use the first shard for valid and test
             paths = paths[:1]
         data_path = paths[(epoch - 1) % len(paths)]
-
-        if "task_cfg" in kwargs and kwargs['task_cfg'] is not None:
-            CFG_LOADING_KEYS = ['left_pad_source', "left_pad_target", "max_source_positions", "max_target_positions", 
-                    "prepend_bos", "truncate_source", "num_batch_buckets", "required_seq_len_multiple", 
-                    "seg_tokens", "upsample_scale", "upsample_base", "max_tokens_after_upsample", "filter_ratio"]
-            if not self.cfg.override_task_args:
-                assert kwargs['task_cfg']['_name'] == "translation_dat_task", f"This checkpoint is trained with the task named {kwargs['task_cfg']['_name']}, does not match the given task."
-                for key in CFG_LOADING_KEYS:
-                    self.cfg[key] = kwargs['task_cfg'][key]
-            else:
-                for key in CFG_LOADING_KEYS:
-                    if self.cfg[key] != kwargs['task_cfg'][key]:
-                        logging.warn(f"Overriding task args `{key}` in the checkpoint. new values: {self.cfg[key]}, old values: {kwargs['task_cfg'][key]}")
 
         # infer langcode
         src, tgt = self.cfg.source_lang, self.cfg.target_lang
@@ -393,6 +438,59 @@ class TranslationDATTask(TranslationTask):
     def build_generator(self, models, args, **unused):
         from .translation_dat_generator import TranslationDATGenerator
         return TranslationDATGenerator(self.target_dictionary)
+
+    def build_model(self, cfg, from_checkpoint=False):
+        # find explicit task arguments
+        from fairseq.options import get_parser, add_dataset_args
+        from fairseq import options
+        parser = get_parser("Task", "translation_dat_task")
+        add_dataset_args(parser)
+        args, _ = options.parse_args_and_arch(parser, suppress_defaults=True, parse_known=True)
+
+        # update arguments for decoding
+        for key, value in vars(args).items():
+            if hasattr(cfg, key) and getattr(cfg, key) != value:
+                logging.info(f"Updating model arguments by user commands, key={key}, value_in_checkpoint={getattr(cfg, key)} -> value_in_cmd={value}")
+                setattr(cfg, key, value)
+        # setting fp16
+        if not getattr(args, "fp16", False) and hasattr(cfg, "fp16") and getattr(cfg, "fp16"):
+            logging.info(f"Updating model arguments by user commands, key=fp16, value_in_checkpoint=True -> value_in_cmd=False")
+            setattr(cfg, key, value)
+
+        # update task cfg by model checkpoints
+        if getattr(args, "do_not_load_task_args", None):
+            logging.info("You use --do-not-load-task-args, then you have to specify all task arguments explicitly.")
+        else:
+            for key, value in vars(cfg).items():
+                if key not in {"_name"} and hasattr(self.cfg, key) and getattr(self.cfg, key) != value:
+                    # logging.info(f"Updating task arguments by model arguments, key={key}, oldvalue={getattr(self.cfg, key)}, newvalue={value}")
+                    setattr(self.cfg, key, value)
+
+        # build dictionary
+        paths = utils.split_paths(self.cfg.data)
+        assert len(paths) > 0
+        # find language pair automatically
+        if self.cfg.source_lang is None or self.cfg.target_lang is None:
+            self.cfg.source_lang, self.cfg.target_lang = data_utils.infer_language_pair(paths[0])
+        if self.cfg.source_lang is None or self.cfg.target_lang is None:
+            raise Exception(
+                "Could not infer language pair, please provide it explicitly"
+            )
+        self.src_dict = TranslationDATDict.load(
+            os.path.join(paths[0], "dict.{}.txt".format(self.cfg.source_lang)), seg_tokens=self.cfg.seg_tokens
+        )
+        self.tgt_dict = TranslationDATDict.load(
+            os.path.join(paths[0], "dict.{}.txt".format(self.cfg.target_lang)), seg_tokens=self.cfg.seg_tokens
+        )
+        assert self.cfg.source_lang is not None and self.cfg.target_lang is not None
+        assert self.src_dict.pad() == self.tgt_dict.pad()
+        assert self.src_dict.eos() == self.tgt_dict.eos()
+        assert self.src_dict.unk() == self.tgt_dict.unk()
+        logger.info("[{}] dictionary: {} types".format(self.cfg.source_lang, len(self.src_dict)))
+        logger.info("[{}] dictionary: {} types".format(self.cfg.target_lang, len(self.tgt_dict)))
+
+        model = super().build_model(cfg, from_checkpoint)
+        return model
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):
         if constraints is not None:
@@ -655,7 +753,7 @@ class TranslationDATTask(TranslationTask):
             else:
                 if filter_ratio is not None:
                     ignored = indices[
-                        (src_sizes[indices] > max_src_size) | (tgt_sizes[indices] > max_tgt_size) | 
+                        (src_sizes[indices] > max_src_size) | (tgt_sizes[indices] > max_tgt_size) |
                         ((src_sizes[indices] * filter_ratio_max).astype(int) < tgt_sizes[indices]) |
                         ((tgt_sizes[indices] * filter_ratio_rev).astype(int) < src_sizes[indices])
                     ]

@@ -112,12 +112,22 @@ def parse_args_and_arch(
             parse_known=parse_known,
             suppress_defaults=False,
         )
-        suppressed_parser = argparse.ArgumentParser(add_help=False, parents=[parser])
+        if parse_known:
+            args, extra = args
+        suppressed_parser = argparse.ArgumentParser(add_help=False, parents=[parser], allow_abbrev=False)
         suppressed_parser.set_defaults(**{k: None for k, v in vars(args).items()})
-        args = suppressed_parser.parse_args(input_args)
-        return argparse.Namespace(
-            **{k: v for k, v in vars(args).items() if v is not None}
-        )
+        if parse_known:
+            args, extra = suppressed_parser.parse_known_args(input_args)
+            args = argparse.Namespace(
+                **{k: v for k, v in vars(args).items() if v is not None}
+            )
+            return args, extra
+        else:
+            args = suppressed_parser.parse_args(input_args)
+            args = argparse.Namespace(
+                **{k: v for k, v in vars(args).items() if v is not None}
+            )
+            return args
 
     from fairseq.models import ARCH_MODEL_REGISTRY, ARCH_CONFIG_REGISTRY, MODEL_REGISTRY
 

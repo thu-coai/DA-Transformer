@@ -295,6 +295,15 @@ class NATDAGLoss(FairseqCriterion):
                 prob_thresh.masked_fill_(glance_nums == 0, 100)
                 keep_prob = (prob >= prob_thresh.unsqueeze(-1)).to(prob.dtype)
 
+            elif self.glance_strategy == "fix":
+                prob = torch.randn(oracle.shape, device=tgt_tokens.device, dtype=torch.float)
+                prob.masked_fill_(~predict_assigned_mask | glat_prev_mask, -100)
+                glance_nums = ((target_length - glat_prev_mask.sum(dim=-1)) * glat['context_p'] + 0.5).to(torch.long)
+                #prob_thresh = prob.topk(glance_nums.max().clip(min=1))[0].gather(-1, (glance_nums - 1).clip(min=0).unsqueeze(-1)).squeeze(-1)
+                prob_thresh = prob.sort(descending=True)[0].gather(-1, (glance_nums - 1).clip(min=0).unsqueeze(-1)).squeeze(-1)
+                prob_thresh.masked_fill_(glance_nums == 0, 100)
+                keep_prob = (prob >= prob_thresh.unsqueeze(-1)).to(prob.dtype)
+
             keep_word_mask = (torch.rand(prev_output_tokens.shape, device=prev_output_tokens.device) < keep_prob).bool() | glat_prev_mask.squeeze(1)
 
             glat_prev_output_tokens = prev_output_tokens.masked_fill(keep_word_mask, 0) + oracle.masked_fill(~keep_word_mask, 0)

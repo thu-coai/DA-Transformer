@@ -10,45 +10,47 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 fairseq-train ${data_dir}  \
     \
     `# DA-Transformer Task Configs` \
     --task translation_dat_task \
-    --upsample-base predict --upsample-scale 4~8 \
-    --seg-tokens 32 --filter-max-length 512:128 \
+    --upsample-base source --upsample-scale 8 \
+    --filter-max-length 136:1088 --filter-ratio 2 \
     \
     `# DA-Transformer Architecture Configs` \
-    --arch ls_glat_decomposed_link_pretrain \
-    --links-feature feature:position --segment-embedding \
-    --max-source-positions 512 --max-target-positions 1024 \
+    --arch ls_glat_decomposed_link_base \
+    --links-feature feature:position \
+    --max-source-positions 136 --max-target-positions 1088 \
     --encoder-learned-pos --decoder-learned-pos \
     --share-all-embeddings --activation-fn gelu --apply-bert-init \
     \
     `# DA-Transformer Decoding Configs (See more in the decoding section)` \
-    --decode-strategy lookahead --decode-upsample-scale 6.0 \
+    --decode-strategy lookahead --decode-upsample-scale 8.0 \
     \
     `# DA-Transformer Criterion Configs` \
     --criterion nat_dag_loss \
     --length-loss-factor 0 --max-transition-length 99999 \
-    --glat-p 0.1 --glance-strategy fix \
-    --use-pretrain-loss \
+    --glat-p 0.5:0.1@200k --glance-strategy number-random \
+    --no-force-emit \
     \
     `# Optimizer & Regularizer Configs` \
     --optimizer ls_adam --adam-betas '(0.9,0.999)' --fp16 \
     --label-smoothing 0.0 --weight-decay 0.01 --dropout 0.1 \
     --lr-scheduler inverse_sqrt  --warmup-updates 10000   \
-    --clip-norm 0.1 --lr 0.0002 --warmup-init-lr '1e-07' --stop-min-lr '1e-09' \
+    --clip-norm 0.1 --lr 0.0005 --warmup-init-lr '1e-07' --stop-min-lr '1e-09' \
     \
     `# Training Configs` \
-    --max-sentences 16 --max-sentences-valid 8 --update-freq 2 \
-    --max-encoder-batch-tokens 22000 --max-decoder-batch-tokens 22000 \
-    --max-update 500000  --grouped-shuffling \
+    --max-tokens 4096  --max-tokens-valid 4096 --update-freq 2 \
+    --max-update 300000  --grouped-shuffling \
+    --max-encoder-batch-tokens 8000 --max-decoder-batch-tokens 34000 \
     --seed 0 --ddp-backend c10d --required-batch-size-multiple 1 \
     \
     `# Validation Configs` \
     --valid-subset valid \
     --validate-interval 1       --validate-interval-updates 10000 \
+    --eval-bleu --eval-bleu-detok space --eval-bleu-remove-bpe --eval-bleu-print-samples --eval-tokenized-bleu \
     --fixed-validation-seed 7 \
     \
     `# Checkpoint Configs` \
+    --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
     --save-interval 1  --save-interval-updates 10000 \
-    --save-dir ${checkpoint_dir} \
+    --keep-best-checkpoints 5 --save-dir ${checkpoint_dir} \
     \
     `# Logging Configs` \
     --tensorboard-logdir ${tensorboard_dir} \

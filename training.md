@@ -22,6 +22,7 @@
                                 #   For example, if the ratio is set to "8", samples where len(target)/len(source) > 8 or len(target)/len(source) < 1/8 will be removed.
                                 #   If set to "0.5~2", samples where len(target)/len(source) < 0.5 or len(target)/len(source) > 2 will be removed.
                                 #   Default: None (disabled).
+--do-not-load-task-args         # Do not load task arguments from the restored checkpoints.
 ```
 
 ### Model Configs

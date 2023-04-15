@@ -217,60 +217,59 @@ class GlatDecomposedLink(FairseqNATModel):
         parser.add_argument('--filter-max-length', default=None, type=str,
                     help='Filters samples that exceed the maximum lengths. For example, "128:256" indicates a maximum source length of 128 and a maximum target length of 256. '
                         'The default value of None filters according to max-source-positions and max-target-positions.')
-        parser.add_argument('--max-encoder-batch-tokens', type=int, default=None,
-                    help='Specifies the maximum number of tokens for the encoder input to avoid running out of memory. The default value of None indicates no limit.')
-        parser.add_argument('--max-decoder-batch-tokens', type=int, default=None,
-                    help='Specifies the maximum number of tokens for the decoder input to avoid running out of memory. The default value of None indicates no limit.')
 
         try:
-            # the argument may be conflicting with the task arguments
+            # shared arguments with task, can be altered after training
+            parser.add_argument('--max-encoder-batch-tokens', type=int, default=None,
+                    help='Specifies the maximum number of tokens for the encoder input to avoid running out of memory. The default value of None indicates no limit.')
+            parser.add_argument('--max-decoder-batch-tokens', type=int, default=None,
+                    help='Specifies the maximum number of tokens for the decoder input to avoid running out of memory. The default value of None indicates no limit.')
+
             parser.add_argument("--upsample-base", type=str, default="source", help='Possible values are: ["predict", "source", "source_old"]. '
                 'If set to "predict", the DAG size will be determined by the golden target length during training and the predicted length during inference. Note that --length-loss-factor must be greater than 0 during training. '
                 'If set to "source", the DAG size will be determined by the source length during both training and inference. You can disable the length predictor during training by setting --length-loss-factor to 0. '
                 'If set to "source_old", the DAG size length is determined similarly to "source" but several token longer. This option is only used for compatibility with the upsampling method in version 1.0.')
-        except:
-            pass
-
-        parser.add_argument("--decode-upsample-scale", type=float, default=None, help="Up-sampling scale to determine the DAG size during inference. "
+            parser.add_argument("--decode-upsample-scale", type=float, default=None, help="Up-sampling scale to determine the DAG size during inference. "
                         "If --upsample-scale used in training is a fixed number, this parameter should be the same value."
                         "If --upsample-scale used in training is a range, this parameter can be the average of the range, or tuned on the validation set.")
-        parser.add_argument('--decode-strategy', type=str, default="lookahead", 
-                    help='Decoding strategy to use. Options include "greedy", "lookahead", "viterbi", "jointviterbi", "sample", and "beamsearch".')
+            parser.add_argument('--decode-strategy', type=str, default="lookahead", 
+                        help='Decoding strategy to use. Options include "greedy", "lookahead", "viterbi", "jointviterbi", "sample", and "beamsearch".')
 
-        parser.add_argument('--decode-no-consecutive-repeated-ngram', type=int, default=0,
-                    help="Prevent consecutive repeated k-grams (k <= n) in the generated text. Use 0 to disable this feature. This argument is used in greedy, lookahead, sample, and beam search decoding methods.")
-        parser.add_argument('--decode-no-repeated-ngram', type=int, default=0,
-                    help="Prevent repeated k-grams (not necessarily consecutive) with order n or higher in the generated text. Use 0 to disable this feature. "
-                            "This argument is used in lookahead, sample, and beam search decoding methods.")
-        parser.add_argument('--decode-top-cand-n', type=float, default=5, 
-                    help='Number of top candidates to consider during transition. This argument is used in lookahead decoding with n-gram prevention, and sample and beamsearch decoding methods.')
-        parser.add_argument('--decode-top-p', type=float, default=0.9, 
-                    help="Maximum probability of top candidates to consider during transition. This argument is used in lookahead decoding with n-gram prevention, and sample and beamsearch decoding methods.")
-        parser.add_argument('--decode-viterbibeta', type=float, default=1, 
-                    help="Parameter used for length penalty in Viterbi decoding. The sentence with the highest score is found using: P(A,Y|X) / |Y|^{beta}")
-        parser.add_argument('--decode-temperature', type=float, default=1, help="Temperature to use in sample decoding.")
+            parser.add_argument('--decode-no-consecutive-repeated-ngram', type=int, default=0,
+                        help="Prevent consecutive repeated k-grams (k <= n) in the generated text. Use 0 to disable this feature. This argument is used in greedy, lookahead, sample, and beam search decoding methods.")
+            parser.add_argument('--decode-no-repeated-ngram', type=int, default=0,
+                        help="Prevent repeated k-grams (not necessarily consecutive) with order n or higher in the generated text. Use 0 to disable this feature. "
+                                "This argument is used in lookahead, sample, and beam search decoding methods.")
+            parser.add_argument('--decode-top-cand-n', type=float, default=5, 
+                        help='Number of top candidates to consider during transition. This argument is used in lookahead decoding with n-gram prevention, and sample and beamsearch decoding methods.')
+            parser.add_argument('--decode-top-p', type=float, default=0.9, 
+                        help="Maximum probability of top candidates to consider during transition. This argument is used in lookahead decoding with n-gram prevention, and sample and beamsearch decoding methods.")
+            parser.add_argument('--decode-viterbibeta', type=float, default=1, 
+                        help="Parameter used for length penalty in Viterbi decoding. The sentence with the highest score is found using: P(A,Y|X) / |Y|^{beta}")
+            parser.add_argument('--decode-temperature', type=float, default=1, help="Temperature to use in sample decoding.")
 
-        parser.add_argument('--decode-beamsize', type=float, default=100, help="Beam size used in beamsearch decoding.")
-        parser.add_argument('--decode-max-beam-per-length', type=float, default=10, 
-                    help="Maximum number of beams with the same length in each step during beamsearch decoding.")
-        parser.add_argument('--decode-gamma', type=float, default=0.1, 
-                            help="Parameter used for n-gram language model score in beamsearch decoding. The sentence with the highest score "
-                                "is found using: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]")
-        parser.add_argument('--decode-alpha', type=float, default=1.1, 
-                            help="Parameter used for length penalty in beamsearch decoding. "
-                                "The sentence with the highest score is found using: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]")
-        parser.add_argument('--decode-beta', type=float, default=1, help="Parameter used to scale the score of logits in beamsearch decoding. "
-                                "The score of a sentence is given by: sum P(y_i|a_i) + beta * sum log(a_i|a_{i-1})")
-        parser.add_argument('--decode-lm-path', type=str, default=None, help="Path to n-gram language model to use during beamsearch decoding. Set to None to disable n-gram LM.")
-        parser.add_argument('--decode-max-batchsize', type=int, default=32, help="Maximum batch size to use during beamsearch decoding. "
-                                "Should not be smaller than the actual batch size, as it is used for memory allocation.")
-        parser.add_argument('--decode-max-workers', type=int, default=8, help="Number of multiprocess workers to use during beamsearch decoding. "
-                                'More workers will consume more memory. It does not affect decoding latency but decoding throughtput, '
-                                'so you must use "fariseq-fastgenerate" to enable the overlapped decoding to tell the difference.')
-        parser.add_argument('--decode-threads-per-worker', type=int, default=4, help="Number of threads per worker to use during beamsearch decoding. "
-                                "This setting also applies to both vanilla decoding and overlapped decoding. A value between 2 and 8 is typically optimal.")
-        parser.add_argument('--decode-dedup', type=bool, default=False, help="Enable token deduplication in BeamSearch.")
-
+            parser.add_argument('--decode-beamsize', type=float, default=100, help="Beam size used in beamsearch decoding.")
+            parser.add_argument('--decode-max-beam-per-length', type=float, default=10, 
+                        help="Maximum number of beams with the same length in each step during beamsearch decoding.")
+            parser.add_argument('--decode-gamma', type=float, default=0.1, 
+                                help="Parameter used for n-gram language model score in beamsearch decoding. The sentence with the highest score "
+                                    "is found using: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]")
+            parser.add_argument('--decode-alpha', type=float, default=1.1, 
+                                help="Parameter used for length penalty in beamsearch decoding. "
+                                    "The sentence with the highest score is found using: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]")
+            parser.add_argument('--decode-beta', type=float, default=1, help="Parameter used to scale the score of logits in beamsearch decoding. "
+                                    "The score of a sentence is given by: sum P(y_i|a_i) + beta * sum log(a_i|a_{i-1})")
+            parser.add_argument('--decode-lm-path', type=str, default=None, help="Path to n-gram language model to use during beamsearch decoding. Set to None to disable n-gram LM.")
+            parser.add_argument('--decode-max-batchsize', type=int, default=32, help="Maximum batch size to use during beamsearch decoding. "
+                                    "Should not be smaller than the actual batch size, as it is used for memory allocation.")
+            parser.add_argument('--decode-max-workers', type=int, default=8, help="Number of multiprocess workers to use during beamsearch decoding. "
+                                    'More workers will consume more memory. It does not affect decoding latency but decoding throughtput, '
+                                    'so you must use "fariseq-fastgenerate" to enable the overlapped decoding to tell the difference.')
+            parser.add_argument('--decode-threads-per-worker', type=int, default=4, help="Number of threads per worker to use during beamsearch decoding. "
+                                    "This setting also applies to both vanilla decoding and overlapped decoding. A value between 2 and 8 is typically optimal.")
+            parser.add_argument('--decode-dedup', type=bool, default=False, help="Enable token deduplication in BeamSearch.")
+        except:
+            pass
 
     def extract_valid_links(self, content, valid_transition_mask):
         # content: batch * prelen * prelen * chunk
@@ -325,11 +324,11 @@ class GlatDecomposedLink(FairseqNATModel):
         chunk_size = self.args.decoder_embed_dim // self.args.decoder_attention_heads
         ninf = float("-inf")
 
-        if training or not self.args.fp16: # use higher precision in training
+        if training: # use higher precision in training
             target_dtype = torch.float
             logsumexp_fast = logsumexp
         else:
-            target_dtype = torch.float16
+            target_dtype = query_linear.weight.dtype
             logsumexp_fast = torch.logsumexp
 
         # Use multiple heads in calculating transition matrix

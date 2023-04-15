@@ -38,6 +38,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train ${data_dir}  \
     --clip-norm 0.1 --lr 5e-5 --warmup-init-lr '1e-07' --stop-min-lr '1e-09' \
     \
     `# Training Configs` \
+    `# these args leads to about 4k target tokens in a batch` \
     --max-tokens 14000  --max-tokens-valid 8000 --update-freq 1 \
     --max-tokens-after-upsample \
     --max-encoder-batch-tokens 20000 --max-decoder-batch-tokens 20000 \
