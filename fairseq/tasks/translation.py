@@ -252,6 +252,9 @@ class TranslationConfig(FairseqDataclass):
     eval_tokenized_bleu: bool = field(
         default=False, metadata={"help": "compute tokenized BLEU instead of sacrebleu"}
     )
+    eval_bleu_order: int = field(
+        default=4, metadata={"help": "bleu order"}
+    )
     eval_bleu_remove_bpe: Optional[str] = field(
         default=None,
         metadata={
@@ -381,6 +384,14 @@ class TranslationTask(FairseqTask):
 
     def valid_step(self, sample, model, criterion):
         loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
+
+        EVAL_BLEU_ORDER = self.cfg.eval_bleu_order
+        import sacrebleu
+        if sacrebleu.BLEU.NGRAM_ORDER != self.cfg.eval_bleu_order:
+            sacrebleu.BLEU.NGRAM_ORDER = self.cfg.eval_bleu_order
+            func = sacrebleu.BLEU.extract_ngrams
+            sacrebleu.BLEU.extract_ngrams = lambda x: func(x, min_order=1, max_order=self.cfg.eval_bleu_order)
+
         if self.cfg.eval_bleu:
             bleu = self._inference_with_bleu(self.sequence_generator, sample, model)
             logging_output["_bleu_sys_len"] = bleu.sys_len
@@ -410,31 +421,32 @@ class TranslationTask(FairseqTask):
                 counts.append(sum_logs("_bleu_counts_" + str(i)))
                 totals.append(sum_logs("_bleu_totals_" + str(i)))
 
-            if max(totals) > 0:
-                # log counts as numpy arrays -- log_scalar will sum them correctly
-                metrics.log_scalar("_bleu_counts", np.array(counts))
-                metrics.log_scalar("_bleu_totals", np.array(totals))
-                metrics.log_scalar("_bleu_sys_len", sum_logs("_bleu_sys_len"))
-                metrics.log_scalar("_bleu_ref_len", sum_logs("_bleu_ref_len"))
+            # log counts as numpy arrays -- log_scalar will sum them correctly
+            metrics.log_scalar("_bleu_counts", np.array(counts))
+            metrics.log_scalar("_bleu_totals", np.array(totals))
+            metrics.log_scalar("_bleu_sys_len", sum_logs("_bleu_sys_len"))
+            metrics.log_scalar("_bleu_ref_len", sum_logs("_bleu_ref_len"))
 
-                def compute_bleu(meters):
-                    import inspect
+            def compute_bleu(meters):
+                import inspect
 
-                    try:
-                        from sacrebleu.metrics import BLEU
+                try:
+                    from sacrebleu.metrics import BLEU
 
-                        comp_bleu = BLEU.compute_bleu
-                    except ImportError:
-                        # compatibility API for sacrebleu 1.x
-                        import sacrebleu
+                    comp_bleu = BLEU.compute_bleu
+                except ImportError:
+                    # compatibility API for sacrebleu 1.x
+                    import sacrebleu
 
-                        comp_bleu = sacrebleu.compute_bleu
+                    comp_bleu = sacrebleu.compute_bleu
 
-                    fn_sig = inspect.getfullargspec(comp_bleu)[0]
-                    if "smooth_method" in fn_sig:
-                        smooth = {"smooth_method": "exp"}
-                    else:
-                        smooth = {"smooth": "exp"}
+                fn_sig = inspect.getfullargspec(comp_bleu)[0]
+                if "smooth_method" in fn_sig:
+                    smooth = {"smooth_method": "exp"}
+                else:
+                    smooth = {"smooth": "exp"}
+
+                if sum(meters["_bleu_totals"].sum) > 0:
                     bleu = comp_bleu(
                         correct=meters["_bleu_counts"].sum,
                         total=meters["_bleu_totals"].sum,
@@ -443,8 +455,10 @@ class TranslationTask(FairseqTask):
                         **smooth,
                     )
                     return round(bleu.score, 2)
+                else:
+                    return 0
 
-                metrics.log_derived("bleu", compute_bleu)
+            metrics.log_derived("bleu", compute_bleu)
 
     def max_positions(self):
         """Return the max sentence length allowed by the task."""
