@@ -55,7 +55,8 @@ def load_archive_file(archive_file):
     # redirect to the cache, if necessary
     try:
         resolved_archive_file = cached_path(archive_file, cache_dir=None)
-    except EnvironmentError:
+    except EnvironmentError as err:
+        print(err)
         logger.info(
             "Archive name '{}' was not found in archive name list. "
             "We assumed '{}' was a path or URL but couldn't find any file "
