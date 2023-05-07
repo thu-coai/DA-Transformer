@@ -226,6 +226,9 @@ def do_setup(package_data):
             "bitarray",
             "ninja"
         ],
+        extras_require={
+            "demo": ["jieba", "subword-nmt"],
+        },
         dependency_links=dependency_links,
         packages=find_packages(
             exclude=[

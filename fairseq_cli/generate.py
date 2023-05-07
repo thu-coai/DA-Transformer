@@ -14,6 +14,7 @@ import os
 import sys
 from argparse import Namespace
 from itertools import chain
+import inspect
 
 import numpy as np
 import torch
@@ -199,6 +200,11 @@ def _main(cfg: DictConfig, output_file):
             constraints = sample["constraints"]
 
         gen_timer.start()
+        if not warn_fastgenerate and "allow_future" in inspect.getargspec(task.inference_step).args \
+                and getattr(models[0].args, "decode_max_workers", 0) >= 1 \
+                and getattr(models[0].args, "decode_strategy", None) == "beamsearch":
+            logging.warn("You should use fairseq-fastgenerate instead of faiseq-generate to enable overlapped decoding !")
+            warn_fastgenerate = True
         hypos = task.inference_step(
             generator,
             models,
@@ -206,14 +212,6 @@ def _main(cfg: DictConfig, output_file):
             prefix_tokens=prefix_tokens,
             constraints=constraints,
         )
-        if not isinstance(hypos, list): # concurrent task
-            if not warn_fastgenerate:
-                logging.warn("You should use fairseq-fastgenerate instead of faiseq-generate to enable overlapped decoding !")
-                warn_fastgenerate = True
-            hypos_result = hypos.future.result()
-            for fn, args in zip(hypos.fn, hypos.args):
-                hypos_result = fn(hypos_result, *args)
-            hypos = hypos_result
 
         num_generated_tokens = sum(len(h[0]["tokens"]) for h in hypos)
         gen_timer.stop(num_generated_tokens)

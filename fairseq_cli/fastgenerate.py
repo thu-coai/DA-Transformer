@@ -14,6 +14,7 @@ import os
 import sys
 from argparse import Namespace
 from itertools import chain
+import inspect
 
 import numpy as np
 import torch
@@ -205,13 +206,23 @@ def _main(cfg: DictConfig, output_file):
         if "constraints" in sample:
             constraints = sample["constraints"]
 
-        hypos = task.inference_step(
-            generator,
-            models,
-            sample,
-            prefix_tokens=prefix_tokens,
-            constraints=constraints,
-        )
+        if "allow_future" in inspect.getargspec(task.inference_step).args:
+            hypos = task.inference_step(
+                generator,
+                models,
+                sample,
+                prefix_tokens=prefix_tokens,
+                constraints=constraints,
+                allow_future=True
+            )
+        else:
+            hypos = task.inference_step(
+                generator,
+                models,
+                sample,
+                prefix_tokens=prefix_tokens,
+                constraints=constraints,
+            )
 
         task_queue.append(ConcurrentTask(hypos, sample_cpu))
 
