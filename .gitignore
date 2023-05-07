@@ -137,3 +137,4 @@ wandb/
 
 git_info
 .vscode
+demo/*
