@@ -31,9 +31,14 @@ Directed Acyclic Transformer (DA-Transformer) is a non-autoregressive sequence-t
   ![open_generation_result](./images/open_generation_result.png)
 </details>
 
-**News(2023-4-11)**: We are excited to announce a new framework to train DA-Transformer and a pre-trained checkpoint on Wikipedia and BookCorpus. After fine-tuning, **DA-Transformer achieves outstanding results on various generation tasks**, including question generation, summarization, paraphrasing, dialog generation, and story generation, **surpassing the performance of some pre-trained autoregressive models**, such as [MASS](https://github.com/microsoft/MASS), [BART](https://github.com/facebookresearch/fairseq/blob/main/examples/bart/README.md), and [ProphetNet](https://github.com/microsoft/ProphetNet). We are currently working on a research paper and will release it soon. Stay tuned for updates!
+**News(2022-5)**: We released the DA-Transformer code for machine translation. Update: This [version](https://github.com/thu-coai/DA-Transformer/tree/v1.0) is archived.
 
-**News(2022-5-23)**: We released the DA-Transformer code for machine translation. Update: This [version](https://github.com/thu-coai/DA-Transformer/tree/v1.0) is archived.
+**News(2023-4)**: We are excited to announce a new framework to train DA-Transformer and a pre-trained checkpoint on Wikipedia and BookCorpus. After fine-tuning, **DA-Transformer achieves outstanding results on various generation tasks**, including question generation, summarization, paraphrasing, dialog generation, and story generation, **surpassing the performance of some pre-trained autoregressive models**, such as [MASS](https://github.com/microsoft/MASS), [BART](https://github.com/facebookresearch/fairseq/blob/main/examples/bart/README.md), and [ProphetNet](https://github.com/microsoft/ProphetNet). Our paper is released at [Arxiv](https://arxiv.org/pdf/2304.11791.pdf).
+
+**News(2023-5)**: We release a live [demo](https://huggingface.co/spaces/thu-coai/DA-Transformer) on Huggingface Space. You can interact with our model and see the predicted DAG structure. Try it now!
+
+![demo](./images/demo.gif)
+
 
 ## Table of Contents
 
@@ -54,6 +59,7 @@ Directed Acyclic Transformer (DA-Transformer) is a non-autoregressive sequence-t
 * [Other Scripts](#other-scripts)
 * [Released Checkpoints](#released-checkpoints)
 * [FAQs](#faqs)
+* [Contact Us](#contact-us)
 * [How to Cite](#how-to-cite)
 
 ## Overview
@@ -387,39 +393,36 @@ average_checkpoint_path=/path/to/checkpoint/average.pt
 
 # BeamSearch without LM
 fairseq-generate  ${data_dir} \
-    --gen-subset test --user-dir fs_plugins --task translation_lev_modified \
-    --iter-decode-max-iter 0 --iter-decode-eos-penalty 0 --beam 1 \
+    --gen-subset test --user-dir fs_plugins --task translation_dat_task \
     --remove-bpe --batch-size 32 --seed 0 \
     --decode-strategy beamsearch --decode-upsample-scale 8 \
     --decode-beta 1 --decode-alpha 1.1 --decode-gamma 0 \
     --decode-beamsize 200 --decode-top-cand-n 5 --decode-top-p 0.9 \
-    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 1 --decode-threads-per--workers 6 --decode-dedup \
+    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 0 --decode-threads-per-worker 6 --decode-dedup \
     --path ${average_checkpoint_path}
 
 # BeamSearch with LM
 # You should first build the n-gram language model and save it to /path/to/ngram_lm.arpa
 fairseq-generate ${data_dir} \
-    --gen-subset test --user-dir fs_plugins --task translation_lev_modified \
-    --iter-decode-max-iter 0 --iter-decode-eos-penalty 0 --beam 1 \
+    --gen-subset test --user-dir fs_plugins --task translation_dat_task \
     --remove-bpe --batch-size 32 --seed 0 \
     --decode-strategy beamsearch --decode-upsample-scale 8 \
     --decode-beta 1 --decode-alpha 1.1 --decode-gamma 0.1 \
     --decode-beamsize 200 --decode-top-cand-n 5 --decode-top-p 0.9 \
-    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 1 --decode-threads-per--workers 6 --decode-dedup \
+    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 0 --decode-threads-per-worker 6 --decode-dedup \
     --path ${average_checkpoint_path}
 
 # BeamSearch with Overlapped Decoding
 # Enabled by using ``fairseq-fastgenerate`` and setting ``decode_max_workers`` > 0
 # ``fairseq-fastgenerate`` will measure the time of processing the whole test set. It removes all time-consuming operations irrelevant with decoding (such as calculating BLEU scores).
 fairseq-fastgenerate ${data_dir} \
-    --gen-subset test --user-dir fs_plugins --task translation_lev_modified \
-    --iter-decode-max-iter 0 --iter-decode-eos-penalty 0 --beam 1 \
+    --gen-subset test --user-dir fs_plugins --task translation_dat_task \
     --remove-bpe --batch-size 32 --seed 0 \
     --decode-strategy beamsearch --decode-upsample-scale 8 \
     --decode-beta 1 --decode-alpha 1.1 --decode-gamma 0.1 \
     --decode-lm-path /path/to/ngram_lm.arpa \
     --decode-beamsize 200 --decode-top-cand-n 5 --decode-top-p 0.9 \
-    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 1 --decode-threads-per--workers 6 --decode-dedup \
+    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 0 --decode-threads-per-worker 6 --decode-dedup \
     --path ${average_checkpoint_path}
 ```
 
@@ -489,6 +492,10 @@ We have released the following checkpoints for pre-trained models described in o
          ```
 
    * Rerun your script
+
+## Contact Us
+
+If there are any problems, you are welcome to contact us by posting issues in this repository or sending emails to ``huangfei382@163.com``.
 
 ## How to Cite
 

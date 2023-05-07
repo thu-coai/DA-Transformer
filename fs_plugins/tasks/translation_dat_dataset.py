@@ -61,34 +61,43 @@ def collate(
     id = id.index_select(0, sort_order)
     src_tokens = src_tokens.index_select(0, sort_order)
 
-    target = merge(
-        "target",
-        left_pad=left_pad_target,
-        pad_to_length=pad_to_length["target"]
-        if pad_to_length is not None
-        else None,
-    )
-    target = target.index_select(0, sort_order)
-    tgt_lengths = torch.LongTensor(
-        [s["target"].ne(pad_idx).long().sum() for s in samples]
-    ).index_select(0, sort_order)
-    ntokens = tgt_lengths.sum().item()
+    if samples[0].get("target", None) is not None:
+        target = merge(
+            "target",
+            left_pad=left_pad_target,
+            pad_to_length=pad_to_length["target"]
+            if pad_to_length is not None
+            else None,
+        )
+        target = target.index_select(0, sort_order)
+        tgt_lengths = torch.LongTensor(
+            [s["target"].ne(pad_idx).long().sum() for s in samples]
+        ).index_select(0, sort_order)
+        ntokens = tgt_lengths.sum().item()
 
-    prev_output_tokens = merge("prev_output_tokens", left_pad=left_pad_target)
-    prev_output_tokens = prev_output_tokens.index_select(0, sort_order)
-    prev_output_tokens_segid = merge("prev_output_tokens_segid", left_pad=left_pad_target, pad_idx=0)
-    prev_output_tokens_segid = prev_output_tokens_segid.index_select(0, sort_order)
-    if samples[0]['force_emit'] is not None:
-        force_emit = merge("force_emit", left_pad=left_pad_target, pad_idx=-1)
-        force_emit = force_emit.index_select(0, sort_order)
-        bound_end = merge("bound_end", left_pad=left_pad_target, pad_idx=0)
-        bound_end = bound_end.index_select(0, sort_order)
-        tgt_segid = merge("tgt_segid", left_pad=left_pad_target, pad_idx=-1)
-        tgt_segid = tgt_segid.index_select(0, sort_order)
+        prev_output_tokens = merge("prev_output_tokens", left_pad=left_pad_target)
+        prev_output_tokens = prev_output_tokens.index_select(0, sort_order)
+        prev_output_tokens_segid = merge("prev_output_tokens_segid", left_pad=left_pad_target, pad_idx=0)
+        prev_output_tokens_segid = prev_output_tokens_segid.index_select(0, sort_order)
+        if samples[0]['force_emit'] is not None:
+            force_emit = merge("force_emit", left_pad=left_pad_target, pad_idx=-1)
+            force_emit = force_emit.index_select(0, sort_order)
+            bound_end = merge("bound_end", left_pad=left_pad_target, pad_idx=0)
+            bound_end = bound_end.index_select(0, sort_order)
+            tgt_segid = merge("tgt_segid", left_pad=left_pad_target, pad_idx=-1)
+            tgt_segid = tgt_segid.index_select(0, sort_order)
+        else:
+            force_emit = None
+            bound_end = None
+            tgt_segid = None
     else:
+        prev_output_tokens = None
+        prev_output_tokens_segid = None
         force_emit = None
         bound_end = None
         tgt_segid = None
+        target = None
+        ntokens = None
 
     batch = {
         "id": id,
@@ -286,6 +295,19 @@ class TranslationDATDataset(FairseqDataset):
             eos = self.src_dict.eos()
             if self.src[index][-1] == eos:
                 src_item = self.src[index][:-1]
+
+        if tgt_item is None:
+            example = {
+                "id": index,
+                "source": src_item,
+                "target": tgt_item,
+                "prev_output_tokens": None, # [upsample]
+                "prev_output_tokens_segid": None, # [upsample]
+                "force_emit": None, # [upsample]
+                "bound_end": None, # [upsample]
+                "tgt_segid": None, #[tgt_length]
+            }
+            return example
 
         if self.upsample_base in ["source", "source_old", "fixed"]:
             # Upsampling based on the source length, usually for translation

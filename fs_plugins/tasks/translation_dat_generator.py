@@ -41,7 +41,7 @@ class TranslationDATGenerator(object):
         self.models = models
 
     @torch.no_grad()
-    def generate(self, models, sample, prefix_tokens=None, constraints=None):
+    def generate(self, models, sample, prefix_tokens=None, constraints=None, allow_future=False):
         if constraints is not None:
             raise NotImplementedError(
                 "Constrained decoding with the TranslationDATGenerator is not supported"
@@ -72,9 +72,44 @@ class TranslationDATGenerator(object):
         )
 
         if hasattr(decoder_out, "future"): # for overlapped decoding
-            return DecodeResult(future=decoder_out.future, fn=decoder_out.fn + [finish_hypo], args=decoder_out.args + [(sent_idxs, self.pad, bsz)])
+            if allow_future:
+                return DecodeResult(future=decoder_out.future, fn=decoder_out.fn + [finish_hypo], args=decoder_out.args + [(sent_idxs, self.pad, bsz)])
+            else:
+                hypos_result = decoder_out.future.result()
+                for fn, args in zip(decoder_out.fn, decoder_out.args):
+                    hypos_result = fn(hypos_result, *args)
+                return finish_hypo(hypos_result, sent_idxs, self.pad, bsz)
         else:
             return finish_hypo(decoder_out, sent_idxs, self.pad, bsz)
+
+    @torch.no_grad()
+    def generate_graph(self, models, sample):
+
+        for model in models:
+            model.eval()
+        model = models[0]
+
+        src_tokens = sample["net_input"]["src_tokens"]
+        src_lengths = sample["net_input"]["src_lengths"]
+        bsz, src_len = src_tokens.size()
+
+        # initialize
+        encoder_out = model.forward_encoder([src_tokens, src_lengths])
+
+        prev_decoder_out = model.initialize_output_tokens(encoder_out, src_tokens)
+        sent_idxs = torch.arange(bsz)
+
+        prev_decoder_out = prev_decoder_out._replace(
+            step=0,
+            max_step=0,
+        )
+
+        decoder_options = {}
+        decoder_out, graph_info = model.forward_decoder(
+            prev_decoder_out, encoder_out, decoding_graph=True, **decoder_options
+        )
+
+        return decoder_out, graph_info
 
 def finish_hypo(decoder_out, sent_idxs, pad, bsz, step=0):
     finalized = [[] for _ in range(bsz)]

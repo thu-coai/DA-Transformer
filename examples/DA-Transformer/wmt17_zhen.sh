@@ -11,12 +11,12 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 fairseq-train ${data_dir}  \
     `# DA-Transformer Task Configs` \
     --task translation_dat_task \
     --upsample-base source --upsample-scale 8 \
-    --filter-max-length 128:1024 --filter-ratio 2 \
+    --filter-max-length 115:920 --filter-ratio 2 \
     \
     `# DA-Transformer Architecture Configs` \
     --arch ls_glat_decomposed_link_base \
     --links-feature feature:position \
-    --max-source-positions 128 --max-target-positions 1024 \
+    --max-source-positions 115 --max-target-positions 920 \
     --encoder-learned-pos --decoder-learned-pos \
     --activation-fn gelu --apply-bert-init \
     \

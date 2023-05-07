@@ -309,7 +309,7 @@ class TranslationDATConfig(FairseqDataclass):
             "help": "Prevent repeated k-grams (not necessarily consecutive) with order n or higher in the generated text. Use 0 to disable this feature. This argument is used in greedy, lookahead, sample, and beam search decoding methods."
         }
     )
-    decode_top_cand_n: float = field(
+    decode_top_cand_n: int = field(
         default=5, metadata={
             "help": "Number of top candidates to consider during transition. This argument is used in greedy and lookahead decoding with ngram prevention, and sample and beamsearch decoding methods."
         }
@@ -356,7 +356,7 @@ class TranslationDATConfig(FairseqDataclass):
                                             "Should not be smaller than the actual batch size, as it is used for memory allocation."}
         )
     decode_max_workers: int = field(
-            default=1, metadata={"help": 'Number of multiprocess workers to use during beamsearch decoding. '
+            default=0, metadata={"help": 'Number of multiprocess workers to use during beamsearch decoding. '
                                         'More workers will consume more memory. It does not affect decoding latency but decoding throughtput, '
                                         'so you must use "fariseq-fastgenerate" to enable the overlapped decoding to tell the difference.'}
         )
@@ -374,6 +374,11 @@ class TranslationDATConfig(FairseqDataclass):
     max_decoder_batch_tokens: Optional[int] = field(
         default=None,
         metadata={"help": 'Specifies the maximum number of tokens for the decoder input to avoid running out of memory. The default value of None indicates no limit.'},
+    )
+    max_transition_length: int = field(
+        default=99999,
+        metadata={"help": "Specifies the maximum transition distance. A value of -1 indicates no limit, but this cannot be used with CUDA custom operations. "
+                            "To use CUDA operations with no limit, specify a very large number such as 99999."},
     )
     do_not_load_task_args: bool = field(
         default=False, metadata={"help": "Do not load task arguments stored in checkpoints."}
@@ -439,32 +444,33 @@ class TranslationDATTask(TranslationTask):
         from .translation_dat_generator import TranslationDATGenerator
         return TranslationDATGenerator(self.target_dictionary)
 
-    def build_model(self, cfg, from_checkpoint=False):
-        # find explicit task arguments
-        from fairseq.options import get_parser, add_dataset_args
-        from fairseq import options
-        parser = get_parser("Task", "translation_dat_task")
-        add_dataset_args(parser)
-        args, _ = options.parse_args_and_arch(parser, suppress_defaults=True, parse_known=True)
+    def build_model(self, cfg, from_checkpoint=False, reload_task=False):
+        if reload_task:
+            # find explicit task arguments
+            from fairseq.options import get_parser, add_dataset_args
+            from fairseq import options
+            parser = get_parser("Task", "translation_dat_task")
+            add_dataset_args(parser)
+            args, _ = options.parse_args_and_arch(parser, suppress_defaults=True, parse_known=True)
 
-        # update arguments for decoding
-        for key, value in vars(args).items():
-            if hasattr(cfg, key) and getattr(cfg, key) != value:
-                logging.info(f"Updating model arguments by user commands, key={key}, value_in_checkpoint={getattr(cfg, key)} -> value_in_cmd={value}")
+            # update arguments for decoding
+            for key, value in vars(args).items():
+                if hasattr(cfg, key) and getattr(cfg, key) != value:
+                    logging.info(f"Updating model arguments by user commands, key={key}, value_in_checkpoint={getattr(cfg, key)} -> value_in_cmd={value}")
+                    setattr(cfg, key, value)
+            # setting fp16
+            if not getattr(args, "fp16", False) and hasattr(cfg, "fp16") and getattr(cfg, "fp16"):
+                logging.info(f"Updating model arguments by user commands, key=fp16, value_in_checkpoint=True -> value_in_cmd=False")
                 setattr(cfg, key, value)
-        # setting fp16
-        if not getattr(args, "fp16", False) and hasattr(cfg, "fp16") and getattr(cfg, "fp16"):
-            logging.info(f"Updating model arguments by user commands, key=fp16, value_in_checkpoint=True -> value_in_cmd=False")
-            setattr(cfg, key, value)
 
-        # update task cfg by model checkpoints
-        if getattr(args, "do_not_load_task_args", None):
-            logging.info("You use --do-not-load-task-args, then you have to specify all task arguments explicitly.")
-        else:
-            for key, value in vars(cfg).items():
-                if key not in {"_name"} and hasattr(self.cfg, key) and getattr(self.cfg, key) != value:
-                    # logging.info(f"Updating task arguments by model arguments, key={key}, oldvalue={getattr(self.cfg, key)}, newvalue={value}")
-                    setattr(self.cfg, key, value)
+            # update task cfg by model checkpoints
+            if getattr(args, "do_not_load_task_args", None):
+                logging.info("You use --do-not-load-task-args, then you have to specify all task arguments explicitly.")
+            else:
+                for key, value in vars(cfg).items():
+                    if key not in {"_name"} and hasattr(self.cfg, key) and getattr(self.cfg, key) != value:
+                        # logging.info(f"Updating task arguments by model arguments, key={key}, oldvalue={getattr(self.cfg, key)}, newvalue={value}")
+                        setattr(self.cfg, key, value)
 
         # build dictionary
         paths = utils.split_paths(self.cfg.data)
@@ -503,12 +509,19 @@ class TranslationDATTask(TranslationTask):
             src_tokens, src_lengths, self.source_dictionary,
             left_pad_source=self.cfg.left_pad_source,
             eos=None,
-            prepend_bos=self.cfg.prepend_bos,
-            num_buckets=self.cfg.num_buckets,
+            num_buckets=self.cfg.num_batch_buckets,
             upsample_scale=self.cfg.upsample_scale,
             upsample_base=self.cfg.upsample_base,
             max_tokens_after_upsample=self.cfg.max_tokens_after_upsample,
         )
+
+    def inference_step(
+        self, generator, models, sample, prefix_tokens=None, constraints=None, allow_future=False
+    ):
+        with torch.no_grad():
+            return generator.generate(
+                models, sample, prefix_tokens=prefix_tokens, constraints=constraints, allow_future=allow_future
+            )
 
     def train_step(
         self, sample, model, criterion, optimizer, update_num, ignore_grad=False

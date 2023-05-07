@@ -55,7 +55,8 @@ def load_archive_file(archive_file):
     # redirect to the cache, if necessary
     try:
         resolved_archive_file = cached_path(archive_file, cache_dir=None)
-    except EnvironmentError:
+    except EnvironmentError as err:
+        logger.info(err)
         logger.info(
             "Archive name '{}' was not found in archive name list. "
             "We assumed '{}' was a path or URL but couldn't find any file "
@@ -172,6 +173,9 @@ def cached_path(url_or_filename, cache_dir=None):
     if parsed.scheme in ("http", "https", "s3"):
         # URL, so get it from the cache (downloading if necessary)
         return get_from_cache(url_or_filename, cache_dir)
+    elif parsed.scheme == "hfhub":
+        from huggingface_hub import snapshot_download
+        return snapshot_download(repo_id=url_or_filename.split("//")[1])
     elif os.path.exists(url_or_filename):
         # File, and it exists.
         return url_or_filename

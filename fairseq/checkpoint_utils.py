@@ -405,6 +405,7 @@ def load_model_ensemble_and_task(
     ), "Cannot load state dict with strict=True and checkpoint shards > 1"
     ensemble = []
     cfg = None
+    reload_task = task is not None
     for filename in filenames:
         orig_filename = filename
         model_shard_state = {"shard_weights": [], "shard_metadata": []}
@@ -465,8 +466,8 @@ def load_model_ensemble_and_task(
                 # support old external tasks
 
                 argspec = inspect.getfullargspec(task.build_model)
-                if "from_checkpoint" in argspec.args:
-                    model = task.build_model(cfg.model, from_checkpoint=True)
+                if "from_checkpoint" in argspec.args and "reload_task" in argspec.args:
+                    model = task.build_model(cfg.model, from_checkpoint=True, reload_task=reload_task)
                 else:
                     model = task.build_model(cfg.model)
                 if (

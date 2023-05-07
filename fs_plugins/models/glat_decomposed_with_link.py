@@ -21,8 +21,9 @@ import copy
 import math
 import concurrent
 import time
-import sys
+import json
 import os
+import argparse
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
@@ -94,7 +95,7 @@ class GlatDecomposedLink(FairseqNATModel):
 
     def init_beam_search(self):
         if self.args.decode_strategy == "beamsearch":
-            if self.args.decode_max_workers > 1: # overlapped decoding
+            if self.args.decode_max_workers >= 1: # overlapped decoding
                 import multiprocessing as mp
                 ctx = mp.get_context('spawn')
                 self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=self.args.decode_max_workers, mp_context=ctx, initializer=init_beam_search,
@@ -107,6 +108,50 @@ class GlatDecomposedLink(FairseqNATModel):
                 init_beam_search(self.args.decode_max_batchsize, self.args.decode_beamsize, self.args.decode_top_cand_n,
                                  self.decoder.max_positions(), self.args.max_decoder_batch_tokens, self.args.decode_threads_per_worker,
                                  self.tgt_dict, self.args.decode_lm_path)
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_name_or_path,
+        **kwargs,
+    ):
+        from .hub_interface import DATHubInterface
+
+        from fairseq import checkpoint_utils, file_utils
+
+        model_path = file_utils.load_archive_file(model_name_or_path)
+
+        config_path = os.path.join(model_path, "config.json")
+        if os.path.exists(config_path):
+            config = json.load(open(config_path, 'r'))
+            for key, value in config.items():
+                if key not in kwargs:
+                    kwargs[key] = value
+        kwargs["data"] = model_path
+
+        # convenience hack for loading data and BPE codes from model archive
+        # if data_name_or_path.startswith("."):
+        #     kwargs["data"] = os.path.abspath(os.path.join(model_path, data_name_or_path))
+        # else:
+        #     kwargs["data"] = file_utils.load_archive_file(data_name_or_path)
+        for file, arg in {
+            "code": "bpe_codes",
+            "bpecodes": "bpe_codes",
+            "sentencepiece.bpe.model": "sentencepiece_model",
+            "merges.txt": "bpe_merges",
+            "vocab.json": "bpe_vocab",
+        }.items():
+            path = os.path.join(model_path, file)
+            if os.path.exists(path):
+                kwargs[arg] = path
+
+        # utils.import_user_module(argparse.Namespace(user_dir=f"{os.path.dirname(os.path.abspath(__file__))}/../"))
+
+        models, args, task = checkpoint_utils.load_model_ensemble_and_task(
+            [os.path.join(model_path, kwargs['checkpoint_file'])],
+            arg_overrides=kwargs,
+        )
+        return DATHubInterface(args, task, models[0])
 
     @classmethod
     def build_decoder(cls, args, tgt_dict, embed_tokens):
@@ -232,7 +277,7 @@ class GlatDecomposedLink(FairseqNATModel):
             parser.add_argument("--decode-upsample-scale", type=float, default=None, help="Up-sampling scale to determine the DAG size during inference. "
                         "If --upsample-scale used in training is a fixed number, this parameter should be the same value."
                         "If --upsample-scale used in training is a range, this parameter can be the average of the range, or tuned on the validation set.")
-            parser.add_argument('--decode-strategy', type=str, default="lookahead", 
+            parser.add_argument('--decode-strategy', type=str, default="lookahead",
                         help='Decoding strategy to use. Options include "greedy", "lookahead", "viterbi", "jointviterbi", "sample", and "beamsearch".')
 
             parser.add_argument('--decode-no-consecutive-repeated-ngram', type=int, default=0,
@@ -240,21 +285,21 @@ class GlatDecomposedLink(FairseqNATModel):
             parser.add_argument('--decode-no-repeated-ngram', type=int, default=0,
                         help="Prevent repeated k-grams (not necessarily consecutive) with order n or higher in the generated text. Use 0 to disable this feature. "
                                 "This argument is used in lookahead, sample, and beam search decoding methods.")
-            parser.add_argument('--decode-top-cand-n', type=float, default=5, 
+            parser.add_argument('--decode-top-cand-n', type=float, default=5,
                         help='Number of top candidates to consider during transition. This argument is used in lookahead decoding with n-gram prevention, and sample and beamsearch decoding methods.')
-            parser.add_argument('--decode-top-p', type=float, default=0.9, 
+            parser.add_argument('--decode-top-p', type=float, default=0.9,
                         help="Maximum probability of top candidates to consider during transition. This argument is used in lookahead decoding with n-gram prevention, and sample and beamsearch decoding methods.")
-            parser.add_argument('--decode-viterbibeta', type=float, default=1, 
+            parser.add_argument('--decode-viterbibeta', type=float, default=1,
                         help="Parameter used for length penalty in Viterbi decoding. The sentence with the highest score is found using: P(A,Y|X) / |Y|^{beta}")
             parser.add_argument('--decode-temperature', type=float, default=1, help="Temperature to use in sample decoding.")
 
             parser.add_argument('--decode-beamsize', type=float, default=100, help="Beam size used in beamsearch decoding.")
-            parser.add_argument('--decode-max-beam-per-length', type=float, default=10, 
+            parser.add_argument('--decode-max-beam-per-length', type=float, default=10,
                         help="Maximum number of beams with the same length in each step during beamsearch decoding.")
-            parser.add_argument('--decode-gamma', type=float, default=0.1, 
+            parser.add_argument('--decode-gamma', type=float, default=0.1,
                                 help="Parameter used for n-gram language model score in beamsearch decoding. The sentence with the highest score "
                                     "is found using: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]")
-            parser.add_argument('--decode-alpha', type=float, default=1.1, 
+            parser.add_argument('--decode-alpha', type=float, default=1.1,
                                 help="Parameter used for length penalty in beamsearch decoding. "
                                     "The sentence with the highest score is found using: 1 / |Y|^{alpha} [ log P(Y) + gamma log P_{n-gram}(Y)]")
             parser.add_argument('--decode-beta', type=float, default=1, help="Parameter used to scale the score of logits in beamsearch decoding. "
@@ -262,7 +307,7 @@ class GlatDecomposedLink(FairseqNATModel):
             parser.add_argument('--decode-lm-path', type=str, default=None, help="Path to n-gram language model to use during beamsearch decoding. Set to None to disable n-gram LM.")
             parser.add_argument('--decode-max-batchsize', type=int, default=32, help="Maximum batch size to use during beamsearch decoding. "
                                     "Should not be smaller than the actual batch size, as it is used for memory allocation.")
-            parser.add_argument('--decode-max-workers', type=int, default=8, help="Number of multiprocess workers to use during beamsearch decoding. "
+            parser.add_argument('--decode-max-workers', type=int, default=0, help="Number of multiprocess workers to use during beamsearch decoding. "
                                     'More workers will consume more memory. It does not affect decoding latency but decoding throughtput, '
                                     'so you must use "fariseq-fastgenerate" to enable the overlapped decoding to tell the difference.')
             parser.add_argument('--decode-threads-per-worker', type=int, default=4, help="Number of threads per worker to use during beamsearch decoding. "
@@ -505,7 +550,58 @@ class GlatDecomposedLink(FairseqNATModel):
         else:
             return (min(self.encoder.max_positions(), int(self.decoder.max_positions() / self.args.decode_upsample_scale)), self.decoder.max_positions())
 
-    def forward_decoder(self, decoder_out, encoder_out, decoding_format=None, **kwargs):
+    @torch.no_grad()
+    def _analyze_graph(self, tgt_tokens, output_tokens, logits, links):
+        tgt_tokens = tgt_tokens.long()
+        target_length = (tgt_tokens != self.tgt_dict.pad_index).sum(dim=-1)
+        output_length = (output_tokens != self.tgt_dict.pad_index).sum(dim=-1)
+        batch_size, prelen, _ = links.shape
+
+        # calculate node passing probability
+        f_arr = []
+        f_init = torch.zeros(batch_size, prelen, 1, dtype=links.dtype, device=links.device).fill_(float("-inf"))
+        f_init[:, 0, 0].zero_()
+        f_arr.append(f_init)
+        for _ in range(1, prelen):
+            f_now = torch.logsumexp(f_arr[-1] + links, 1, keepdim=True).transpose(1, 2) # batch * prelen * 1
+            f_arr.append(f_now)
+        f_arr = torch.cat(f_arr, -1).transpose(1, 2)
+        node_pass_prob = f_arr.exp().sum(dim=1).tolist()
+
+        # calculate max path
+        from ..custom_ops import torch_dag_best_alignment, torch_dag_logsoftmax_gather_inplace
+        word_ins_out, match = torch_dag_logsoftmax_gather_inplace(logits, tgt_tokens.unsqueeze(1).expand(-1, prelen, -1))
+        match = match.transpose(1, 2)
+        paths = torch_dag_best_alignment(match, links, output_length, target_length).tolist()
+
+        max_paths = []
+        for i, raw_path in enumerate(paths):
+            sample_max_paths = [-1 for _ in range(target_length[i])]
+            for k, v in enumerate(raw_path):
+                sample_max_paths[v] = k
+            max_paths.append(sample_max_paths)
+
+        # calculate top tokens
+        top_k = 5
+        val, idx = logits.softmax(dim=-1).topk(k=top_k, dim=-1)
+        val = val.tolist()
+        idx = idx.tolist()
+        node_tokens = []
+        node_probs = []
+        for i in range(batch_size):
+            sample_node_tokens = []
+            sample_node_probs = []
+            for j in range(output_length[i]):
+                sample_node_tokens.append([self.tgt_dict[x] for x in idx[i][j]])
+                sample_node_probs.append(val[i][j])
+            node_tokens.append(sample_node_tokens)
+            node_probs.append(sample_node_probs)
+
+        links = torch.nan_to_num(links.softmax(dim=-1), nan=0).tolist()
+        return {"node_pass_prob": node_pass_prob, "max_paths": max_paths, "node_tokens": node_tokens, "node_probs": node_probs, "links": links}
+
+
+    def forward_decoder(self, decoder_out, encoder_out, decoding_format=None, decoding_graph=False, **kwargs):
         output_tokens = decoder_out.output_tokens
         rand_seed = random.randint(0, 19260817)
 
@@ -525,7 +621,20 @@ class GlatDecomposedLink(FairseqNATModel):
         }
 
         output_logits, links = self.extract_features(output_tokens, encoder_out, net_input, rand_seed, require_links=True, training=False)
-        return self.inference(decoder_out, output_logits, links)
+
+        if self.args.max_transition_length != -1:
+            links = self.restore_valid_links(links)
+
+        result = self.inference(decoder_out, output_logits, links)
+        if not decoding_graph:
+            return result
+
+        if isinstance(result, DecodeResult):
+            hypos_result = result.future.result()
+            for fn, args in zip(result.fn, result.args):
+                hypos_result = fn(hypos_result, *args)
+            result = hypos_result
+        return result, self._analyze_graph(result.output_tokens, output_tokens, output_logits, links)
 
     def inference_lookahead_repeatprevent(self, links, output_logits_normalized, output_length):
 
@@ -548,7 +657,7 @@ class GlatDecomposedLink(FairseqNATModel):
         output_tokens = []
         for i, length in enumerate(output_length_cpu):
             j = 0
-            res = []
+            res = [top_logits_idx[i][0][0]]
             banned_ngram = set()
             while j != length - 1:
                 temp_banned_token = set()
@@ -746,12 +855,16 @@ class GlatDecomposedLink(FairseqNATModel):
         # nextstep_idx = nextstep_idx.gather(-1, rearange_idx) # batch * prelen * top_cand_n
         # logits_idx = logits_idx.gather(-1, rearange_idx) # batch * prelen * top_cand_n
 
-        dagscores = np.ascontiguousarray(dagscores.cpu().numpy())
+        if dagscores.get_device() == -1 and self.args.decode_strategy == "beamsearch" and self.args.decode_max_workers < 1:
+            raise RuntimeError("Please specify decode_max_workers at least 1 if you want to run DA-Transformer on cpu while using beamsearch decoding. "
+                               "It will use a seperate process for beamsearch because the multi-thread library used in PyTorch and DAG-Search is conflict.")
+
+        dagscores = np.ascontiguousarray(dagscores.float().cpu().numpy())
         nextstep_idx = np.ascontiguousarray(nextstep_idx.int().cpu().numpy())
         logits_idx = np.ascontiguousarray(logits_idx.int().cpu().numpy())
         output_length_cpu = np.ascontiguousarray(output_length.int().cpu().numpy())
 
-        if self.args.decode_max_workers > 1:
+        if self.args.decode_max_workers >= 1:
             future = self.executor.submit(call_dag_search, dagscores, nextstep_idx, logits_idx,
                 output_length_cpu,
                 self.args.decode_alpha,
@@ -782,8 +895,6 @@ class GlatDecomposedLink(FairseqNATModel):
 
     def inference(self, decoder_out, output_logits, links):
         output_tokens = decoder_out.output_tokens
-        if self.args.max_transition_length != -1:
-            links = self.restore_valid_links(links)
         output_length = torch.sum(output_tokens.ne(self.tgt_dict.pad_index), dim=-1)
 
         output_logits_normalized = output_logits.log_softmax(dim=-1)
