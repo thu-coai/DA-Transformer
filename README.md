@@ -146,15 +146,15 @@ Then, to generate the binarized data required for fairseq training, run the foll
 ```bash
 input_dir=path/to/raw_data        # directory of pre-processed text data
 data_dir=path/to/binarized_data   # directory of the generated binarized data
-src=src                            # source suffix
-tgt=tgt                            # target suffix
-fairseq-preprocess --source-lang ${src} --target-lang ${tgt} \
+src=src                           # source suffix
+tgt=tgt                           # target suffix
+fairseq-datpreprocess --source-lang ${src} --target-lang ${tgt} \
     --trainpref ${input_dir}/train --validpref ${input_dir}/valid --testpref ${input_dir}/test \
     --src-dict ${input_dir}/dict.${src}.txt --tgt-dict {input_dir}/dict.${tgt}.txt \
     --destdir ${data_dir} --workers 32 \
-    --task translation_dat_task [--seg-tokens 32]
+    --user-dir fs_plugins --task translation_dat_task [--seg-tokens 32]
 
-# seg-tokens should be set to 32 when you use pre-trained models
+# seg-tokens should be set to 32 when you use pre-trained models.
 ```
 
 ## Training

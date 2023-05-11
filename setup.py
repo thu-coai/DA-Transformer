@@ -249,6 +249,7 @@ def do_setup(package_data):
                 "fairseq-hydra-train = fairseq_cli.hydra_train:cli_main",
                 "fairseq-interactive = fairseq_cli.interactive:cli_main",
                 "fairseq-preprocess = fairseq_cli.preprocess:cli_main",
+                "fairseq-datpreprocess = fairseq_cli.datpreprocess:cli_main",
                 "fairseq-score = fairseq_cli.score:cli_main",
                 "fairseq-train = fairseq_cli.train:cli_main",
                 "fairseq-validate = fairseq_cli.validate:cli_main",
