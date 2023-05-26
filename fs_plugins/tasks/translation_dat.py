@@ -270,10 +270,10 @@ class TranslationDATConfig(FairseqDataclass):
         }
     )
     upsample_base: str = field(
-        default="source", metadata={"help": 'Possible values are: ["predict", "source", "source_old"]. '
+        default="source", metadata={"help": 'Possible values are: ["predict", "source_old", "source"]. '
             'If set to "predict", the DAG size will be determined by the golden target length during training and the predicted length during inference. Note that --length-loss-factor must be greater than 0 during training. '
-            'If set to "source", the DAG size will be determined by the source length during both training and inference. You can disable the length predictor during training by setting --length-loss-factor to 0. '
-            'If set to "source_old", the DAG size length is determined similarly to "source" but several token longer. This option is only used for compatibility with the upsampling method in version 1.0.'}
+            'If set to "source_old", the DAG size will be determined by the source length during both training and inference. You can disable the length predictor during training by setting --length-loss-factor to 0. '
+            'If set to "source", the DAG size length is determined similarly to "source_old" but several token shorter. Not recommended.'}
     )
     max_tokens_after_upsample: bool = field(
         default=False, metadata={"help": "If enabled, the maximum number of tokens (--max-tokens) considered during generation "

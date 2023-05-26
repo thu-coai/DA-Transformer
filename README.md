@@ -174,7 +174,7 @@ fairseq-train ${data_dir}  \
     \
     `# DA-Transformer Task Configs` \
     --task translation_dat_task \
-    --upsample-base source --upsample-scale 8 \
+    --upsample-base source_old --upsample-scale 8 \
     [--seg-tokens 32] [--filter-max-length 512:128] [--filter-ratio 2] \
     \
     `# DA-Transformer Architecture Configs` \
@@ -240,7 +240,7 @@ We also provide training script examples including:
 
 DA-Transformer currently supports two up-sampling strategies to determine the DAG size:
 
-- ``--upsample-base source``: Recommended in machine translation or tasks have similar length inputs and outputs. The DAG size will be determined by the source length during both training and inference. In this case, ``--upsample-scale`` is usually set to a fixed number, indicating that the DAG size is a fixed multiple times of the input length. You do not need to train a length predictor and can disable it by setting ``--length-loss-factor`` to 0.
+- ``--upsample-base source_old``: Recommended in machine translation or tasks have similar length inputs and outputs. The DAG size will be determined by the source length during both training and inference. In this case, ``--upsample-scale`` is usually set to a fixed number, indicating that the DAG size is a fixed multiple times of the input length. You do not need to train a length predictor and can disable it by setting ``--length-loss-factor`` to 0. (``--upsample-base source`` is similar but gives a slightly smaller DAG size, because it does not count the <bos> and <eos> tokens when measuring the length of inputs.)
 - ``--upsample-base predict``: Recommended in other tasks. The DAG size will be determined by the golden target length during training and the predicted length during inference. In this case, ``--upsample-scale`` is usually set to a range, such as 4~8, indicating that the DAG size is between 4 and 8 times of the input length. It diversifies the DAG structures to promote the model generalization. You need to train a length predictor by setting ``--length-loss-factor`` a greater value than 0 (usually 0.1).
 
 ### Speed up with Lightseq

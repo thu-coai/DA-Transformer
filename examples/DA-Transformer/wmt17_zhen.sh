@@ -10,7 +10,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 fairseq-train ${data_dir}  \
     \
     `# DA-Transformer Task Configs` \
     --task translation_dat_task \
-    --upsample-base source --upsample-scale 8 \
+    --upsample-base source_old --upsample-scale 8 \
     --filter-max-length 115:920 --filter-ratio 2 \
     \
     `# DA-Transformer Architecture Configs` \

@@ -270,10 +270,10 @@ class GlatDecomposedLink(FairseqNATModel):
             parser.add_argument('--max-decoder-batch-tokens', type=int, default=None,
                     help='Specifies the maximum number of tokens for the decoder input to avoid running out of memory. The default value of None indicates no limit.')
 
-            parser.add_argument("--upsample-base", type=str, default="source", help='Possible values are: ["predict", "source", "source_old"]. '
+            parser.add_argument("--upsample-base", type=str, default="source", help='Possible values are: ["predict", "source_old", "source"]. '
                 'If set to "predict", the DAG size will be determined by the golden target length during training and the predicted length during inference. Note that --length-loss-factor must be greater than 0 during training. '
-                'If set to "source", the DAG size will be determined by the source length during both training and inference. You can disable the length predictor during training by setting --length-loss-factor to 0. '
-                'If set to "source_old", the DAG size length is determined similarly to "source" but several token longer. This option is only used for compatibility with the upsampling method in version 1.0.')
+                'If set to "source_old", the DAG size will be determined by the source length during both training and inference. You can disable the length predictor during training by setting --length-loss-factor to 0. '
+                'If set to "source", the DAG size length is determined similarly to "source_old" but several token shorter. Not recommended.')
             parser.add_argument("--decode-upsample-scale", type=float, default=None, help="Up-sampling scale to determine the DAG size during inference. "
                         "If --upsample-scale used in training is a fixed number, this parameter should be the same value."
                         "If --upsample-scale used in training is a range, this parameter can be the average of the range, or tuned on the validation set.")
