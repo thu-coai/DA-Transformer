@@ -114,9 +114,9 @@ __global__ void calculate_maxalpha_kernel(
             alpha[batch_id][t][nowpos] = maxval + match_all[batch_id][t][nowpos];
             trace[batch_id][t][nowpos] = maxidx;
 
-            if(t == target_len-1 && nowpos == output_len-1){
-                CUDA_KERNEL_ASSERT(alpha[batch_id][t][nowpos] > -std::numeric_limits<scalar_t>::infinity() && "dag_best_alignment: no valid path")
-            }
+            // if(t == target_len-1 && nowpos == output_len-1){
+            //     CUDA_KERNEL_ASSERT(alpha[batch_id][t][nowpos] > -1e100 && "dag_best_alignment: no valid path")
+            // }
             // printf("%d %d %d %d: alpha[%d][%d][%d] = %f\n", blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, batch_id, t, nowpos, maxval);
         }
 
@@ -167,18 +167,22 @@ void invoke_calculate_maxalpha(cudaStream_t stream, torch::Tensor &alpha, torch:
 }
 
 
-template<int BLOCK_SIZE, class Accessor1, class Accessor2, class Accessor3>
+template<class scalar_t, int BLOCK_SIZE, class Accessor1, class Accessor2, class Accessor3, class Accessor4>
 __global__ void calculate_backtrace_kernel(
-    Accessor1 path,
-    Accessor2 trace,
-    Accessor3 output_length,
-    Accessor3 target_length,
+    Accessor1 alpha,
+    Accessor2 path,
+    Accessor3 trace,
+    Accessor4 output_length,
+    Accessor4 target_length,
     int bsz, int prelen, int tarlen)
 {
     int batch_id = BLOCK_SIZE * blockIdx.x + threadIdx.x;
     if(batch_id >= bsz) return;
+    int output_len = output_length[batch_id];
+    int target_len = target_length[batch_id];
     int nowpos = output_length[batch_id] - 1;
-    for(int i = target_length[batch_id] - 1; i >= 0; i--){
+    CUDA_KERNEL_ASSERT(alpha[batch_id][target_len-1][nowpos] > -std::numeric_limits<scalar_t>::infinity() && "dag_best_alignment: no valid path")
+    for(int i = target_len - 1; i >= 0; i--){
         path[batch_id][nowpos] = i;
         nowpos = trace[batch_id][i][nowpos];
     }
@@ -186,7 +190,7 @@ __global__ void calculate_backtrace_kernel(
 
 
 template<int BLOCK_SIZE>
-void invoke_calculate_backtrace(cudaStream_t stream, torch::Tensor &path, const torch::Tensor &trace, const torch::Tensor &output_length, const torch::Tensor &target_length,
+void invoke_calculate_backtrace(cudaStream_t stream, torch::Tensor &alpha, torch::Tensor &path, const torch::Tensor &trace, const torch::Tensor &output_length, const torch::Tensor &target_length,
         int bsz, int prelen, int tarlen)
 {
     int n_block = (bsz - 1) / BLOCK_SIZE + 1;
@@ -194,12 +198,18 @@ void invoke_calculate_backtrace(cudaStream_t stream, torch::Tensor &path, const 
     dim3 dimBlock(BLOCK_SIZE);
 
     path.fill_(-1);
-    calculate_backtrace_kernel<BLOCK_SIZE><<<dimGrid, dimBlock, 0, stream>>>(
-        path.packed_accessor64<int32_t, 2>(),
-        trace.packed_accessor64<int32_t, 3>(),
-        output_length.packed_accessor64<int64_t, 1>(),
-        target_length.packed_accessor64<int64_t, 1>(),
-        bsz, prelen, tarlen
+
+    AT_DISPATCH_FLOATING_TYPES(
+        alpha.scalar_type(), "invoke_backtrace_kernel", [&] {
+            calculate_backtrace_kernel<scalar_t, BLOCK_SIZE><<<dimGrid, dimBlock, 0, stream>>>(
+                alpha.packed_accessor64<scalar_t, 3>(),
+                path.packed_accessor64<int32_t, 2>(),
+                trace.packed_accessor64<int32_t, 3>(),
+                output_length.packed_accessor64<int64_t, 1>(),
+                target_length.packed_accessor64<int64_t, 1>(),
+                bsz, prelen, tarlen
+            );
+        }
     );
     // cudaDeviceSynchronize();
     // printf("alpha end\n");
@@ -247,7 +257,7 @@ std::tuple<torch::Tensor, torch::Tensor> dag_best_alignment(const torch::Tensor 
         default: TORCH_CHECK(config <= 4 && config >= 1, "config should be 1~4");
     }
 
-    invoke_calculate_backtrace<512>(current_stream, path, trace, output_length, target_length, bsz, prelen, tarlen);
+    invoke_calculate_backtrace<512>(current_stream, alpha, path, trace, output_length, target_length, bsz, prelen, tarlen);
 
     return std::make_tuple(alpha, path);
 }

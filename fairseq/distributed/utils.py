@@ -314,6 +314,7 @@ def distributed_init(cfg: FairseqConfig):
 
 def distributed_main(i, main, cfg: FairseqConfig, kwargs):
     cfg.distributed_training.device_id = i
+    cfg.model.device_id = i
     if torch.cuda.is_available() and not cfg.common.cpu and not cfg.common.tpu:
         torch.cuda.set_device(cfg.distributed_training.device_id)
     if cfg.distributed_training.distributed_rank is None:  # torch.multiprocessing.spawn
