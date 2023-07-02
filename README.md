@@ -121,7 +121,7 @@ We have incorporated [dag_search](https://github.com/thu-coai/DAG-Search) into t
 * Python >= 3.7
 * Pytorch == 1.10.1 (tested with cuda == 10.2 or 11.3)
 * gcc >= 7.0.0 (for compiling cuda operations. See FAQs if you want to use a lower gcc version)
-* ``git clone --recurse-submodules https://github.com/thu-coai/DA-Transformer.git && pip install -e .``
+* ``git clone --recurse-submodules https://github.com/thu-coai/DA-Transformer.git; cd DA-Transformer; pip install -e .``
 * (Optional) Customized LightSeq for NAT (``cd lightseq && pip install -e .``)
 * (Optional) BeamSearch algorithm for DA-Transformer (``cd dag_search && bash install.sh``)
 
@@ -141,20 +141,24 @@ We provide the datasets used in our papers.
 
 As the pre-training data size is too large, we only provide [pre-processing script](./examples/DA-Transformer/process_pretrain.py) and [pre-processed examples](./examples/DA-Transformer/pretrain_data_example). It can be applied to any unlabelled copora to construct the pre-training data.
 
-Then, to generate the binarized data required for fairseq training, run the following script:
+Then, to generate the binarized data required for fairseq training, run the following script (Note that you should rename the downloaded files before that).
 
 ```bash
 input_dir=path/to/raw_data        # directory of pre-processed text data
 data_dir=path/to/binarized_data   # directory of the generated binarized data
 src=src                           # source suffix
 tgt=tgt                           # target suffix
+
+# The following command require files:
+#     train.${src} train.${tgt} valid.${src} valid.${tgt} test.${src} test.${tgt}
+#     dict.${src}.txt  dict.${tgt}.txt
 fairseq-datpreprocess --source-lang ${src} --target-lang ${tgt} \
     --trainpref ${input_dir}/train --validpref ${input_dir}/valid --testpref ${input_dir}/test \
-    --src-dict ${input_dir}/dict.${src}.txt --tgt-dict {input_dir}/dict.${tgt}.txt \
+    --srcdict ${input_dir}/dict.${src}.txt --tgtdict {input_dir}/dict.${tgt}.txt \
     --destdir ${data_dir} --workers 32 \
     --user-dir fs_plugins --task translation_dat_task [--seg-tokens 32]
 
-# seg-tokens should be set to 32 when you use pre-trained models.
+# [--seg-tokens 32] is optional, it should be set when you use pre-trained models; otherwise, just remove it.
 ```
 
 ## Training
