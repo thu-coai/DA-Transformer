@@ -118,6 +118,9 @@ def finish_hypo(decoder_out, sent_idxs, pad, bsz, step=0):
     finalized_idxs = sent_idxs
     finalized_tokens = decoder_out.output_tokens
     finalized_scores = decoder_out.output_scores
+    if len(finalized_tokens.shape) == 2:
+        finalized_tokens = finalized_tokens.unsqueeze(1)
+        finalized_scores = finalized_scores.unsqueeze(1)
 
     def finalized_hypos(step, prev_out_token, prev_out_score):
             cutoff = prev_out_token.ne(pad)
@@ -135,12 +138,13 @@ def finish_hypo(decoder_out, sent_idxs, pad, bsz, step=0):
             }
 
     for i in range(finalized_idxs.size(0)):
-        finalized[finalized_idxs[i]] = [
-            finalized_hypos(
-                step,
-                finalized_tokens[i],
-                finalized_scores[i],
+        for _finalized_tokens, _finalized_scores in zip(finalized_tokens[i], finalized_scores[i]):
+            finalized[finalized_idxs[i]].append(
+                finalized_hypos(
+                    step,
+                    _finalized_tokens,
+                    _finalized_scores,
+                )
             )
-        ]
 
     return finalized

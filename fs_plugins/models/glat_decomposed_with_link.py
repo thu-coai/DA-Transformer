@@ -293,7 +293,7 @@ class GlatDecomposedLink(FairseqNATModel):
                         help="Parameter used for length penalty in Viterbi decoding. The sentence with the highest score is found using: P(A,Y|X) / |Y|^{beta}")
             parser.add_argument('--decode-temperature', type=float, default=1, help="Temperature to use in sample decoding.")
 
-            parser.add_argument('--decode-beamsize', type=float, default=100, help="Beam size used in beamsearch decoding.")
+            parser.add_argument('--decode-beamsize', type=int, default=100, help="Beam size used in beamsearch decoding.")
             parser.add_argument('--decode-max-beam-per-length', type=float, default=10,
                         help="Maximum number of beams with the same length in each step during beamsearch decoding.")
             parser.add_argument('--decode-gamma', type=float, default=0.1,
@@ -313,6 +313,7 @@ class GlatDecomposedLink(FairseqNATModel):
             parser.add_argument('--decode-threads-per-worker', type=int, default=4, help="Number of threads per worker to use during beamsearch decoding. "
                                     "This setting also applies to both vanilla decoding and overlapped decoding. A value between 2 and 8 is typically optimal.")
             parser.add_argument('--decode-dedup', type=bool, default=False, help="Enable token deduplication in BeamSearch.")
+            parser.add_argument('--decode-final-beamsize', type=int, default=1, help="Output multiple top beams")
         except:
             pass
 
@@ -876,7 +877,8 @@ class GlatDecomposedLink(FairseqNATModel):
                 self.tgt_dict.bos_index,
                 1 if self.args.decode_dedup else 0,
                 self.args.decode_no_consecutive_repeated_ngram,
-                self.args.decode_no_repeated_ngram)
+                self.args.decode_no_repeated_ngram,
+                self.args.decode_final_beamsize)
             return future
         else:
             res = call_dag_search(dagscores, nextstep_idx, logits_idx,
@@ -890,7 +892,8 @@ class GlatDecomposedLink(FairseqNATModel):
                 self.tgt_dict.bos_index,
                 1 if self.args.decode_dedup else 0,
                 self.args.decode_no_consecutive_repeated_ngram,
-                self.args.decode_no_repeated_ngram)
+                self.args.decode_no_repeated_ngram,
+                self.args.decode_final_beamsize)
             return res
 
     def inference(self, decoder_out, output_logits, links):

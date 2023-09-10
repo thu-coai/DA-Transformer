@@ -333,7 +333,7 @@ class TranslationDATConfig(FairseqDataclass):
     decode_beamsize: float = field(
         default=100, metadata={"help": "Beam size used in beamsearch decoding."}
     )
-    decode_max_beam_per_length: float = field(
+    decode_max_beam_per_length: int = field(
             default=10, metadata={"help": "Maximum number of beams with the same length in each step during beamsearch decoding."}
         )
     decode_gamma: float = field(
@@ -366,6 +366,9 @@ class TranslationDATConfig(FairseqDataclass):
         )
     decode_dedup: bool = field(
         default=False, metadata={"help": "Enable token deduplication in BeamSearch."}
+    )
+    decode_final_beamsize: int = field(
+        default=1, metadata={"help": "Output multiple top beams."}
     )
     max_encoder_batch_tokens: Optional[int] = field(
         default=None,
@@ -451,12 +454,20 @@ class TranslationDATTask(TranslationTask):
             from fairseq import options
             parser = get_parser("Task", "translation_dat_task")
             add_dataset_args(parser)
+            full_args, _ = options.parse_args_and_arch(parser, suppress_defaults=False, parse_known=True)
+            parser = get_parser("Task", "translation_dat_task")
+            add_dataset_args(parser)
             args, _ = options.parse_args_and_arch(parser, suppress_defaults=True, parse_known=True)
 
             # update arguments for decoding
             for key, value in vars(args).items():
-                if hasattr(cfg, key) and getattr(cfg, key) != value:
-                    logging.info(f"Updating model arguments by user commands, key={key}, value_in_checkpoint={getattr(cfg, key)} -> value_in_cmd={value}")
+                if (hasattr(cfg, key) and getattr(cfg, key) != value) or (not hasattr(cfg, key) and key not in ['do_not_load_task_args', "force_anneal", "lr_shrink"]):
+                    logging.info(f"Updating model arguments by user commands, key={key}, value_in_checkpoint={getattr(cfg, key, None)} -> value_in_cmd={value}")
+                    setattr(cfg, key, value)
+            # update args not existed in ckpt
+            for key, value in vars(full_args).items():
+                if not hasattr(cfg, key) and key not in ['do_not_load_task_args', "force_anneal", "lr_shrink"]:
+                    logging.info(f"Updating model arguments by default, key={key}, value_by_default={value}")
                     setattr(cfg, key, value)
             # setting fp16
             if not getattr(args, "fp16", False) and hasattr(cfg, "fp16") and getattr(cfg, "fp16"):

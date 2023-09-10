@@ -394,6 +394,7 @@ average_checkpoint_path=/path/to/checkpoint/average.pt
 # ``decode_dedup`` enables token deduplication.
 # ``decode_no_consecutive_repeated_ngram`` prevents consecutive repeated k-grams (k <= n) in the generated text. Use 0 to disable this feature.
 # ``decode_no_repeated_ngram`` prevents repeated k-grams (not necessarily consecutive) with order n or higher in the generated text. Use 0 to disable this feature.
+# ``decode_final_beamsize`` specifies the top-n candidates for outputs, where ``nbest`` should have the same value. For example, use ``--decode-final-beamsize 5 --nbest 5`` to output 5 most probable translations.
 
 # BeamSearch without LM
 fairseq-generate  ${data_dir} \
@@ -403,6 +404,7 @@ fairseq-generate  ${data_dir} \
     --decode-beta 1 --decode-alpha 1.1 --decode-gamma 0 \
     --decode-beamsize 200 --decode-top-cand-n 5 --decode-top-p 0.9 \
     --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 0 --decode-threads-per-worker 6 --decode-dedup \
+    --decode-final-beamsize 1 --nbest 1 \
     --path ${average_checkpoint_path}
 
 # BeamSearch with LM
@@ -414,6 +416,7 @@ fairseq-generate ${data_dir} \
     --decode-beta 1 --decode-alpha 1.1 --decode-gamma 0.1 \
     --decode-beamsize 200 --decode-top-cand-n 5 --decode-top-p 0.9 \
     --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 0 --decode-threads-per-worker 6 --decode-dedup \
+    --decode-final-beamsize 1 --nbest 1 \
     --path ${average_checkpoint_path}
 
 # BeamSearch with Overlapped Decoding
@@ -426,7 +429,7 @@ fairseq-fastgenerate ${data_dir} \
     --decode-beta 1 --decode-alpha 1.1 --decode-gamma 0.1 \
     --decode-lm-path /path/to/ngram_lm.arpa \
     --decode-beamsize 200 --decode-top-cand-n 5 --decode-top-p 0.9 \
-    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 5 --decode-threads-per-worker 2 --decode-dedup \
+    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 0 --decode-threads-per-worker 6 --decode-dedup \
     --path ${average_checkpoint_path}
 ```
 
