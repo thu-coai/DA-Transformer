@@ -426,7 +426,7 @@ fairseq-fastgenerate ${data_dir} \
     --decode-beta 1 --decode-alpha 1.1 --decode-gamma 0.1 \
     --decode-lm-path /path/to/ngram_lm.arpa \
     --decode-beamsize 200 --decode-top-cand-n 5 --decode-top-p 0.9 \
-    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 0 --decode-threads-per-worker 6 --decode-dedup \
+    --decode-max-beam-per-length 10 --decode-max-batchsize 32 --decode-max-workers 5 --decode-threads-per-worker 2 --decode-dedup \
     --path ${average_checkpoint_path}
 ```
 
